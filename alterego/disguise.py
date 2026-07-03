@@ -223,14 +223,30 @@ def process_video(src: str | Path, dst: str | Path, seed: int, strength: float =
     profile = DisguiseProfile.from_seed(seed, strength)
     landmarker = FaceLandmarker()
     smoother = LandmarkSmoother()
+    counts = {"total": 0, "disguised": 0}
 
     def disguise_frame(frame: np.ndarray) -> np.ndarray:
+        counts["total"] += 1
         landmarks = smoother.update(landmarker.detect(frame))
         if landmarks is None:
             return frame
+        counts["disguised"] += 1
         return apply_disguise(frame, landmarks, profile)
 
     try:
         stream_video(src, dst, disguise_frame)
     finally:
         landmarker.close()
+
+    # Silent passthrough is a PRIVACY failure: every frame without a
+    # detected face went through with your real face untouched. Make
+    # low coverage impossible to miss.
+    coverage = counts["disguised"] / max(counts["total"], 1)
+    if coverage < 0.9:
+        print(
+            f"⚠ face detected on only {coverage:.0%} of frames — the rest "
+            f"show your REAL face. Common cause: footage too dark. "
+            f"Try `enhance --night` BEFORE disguise, or re-record with light."
+        )
+    else:
+        print(f"  disguise covered {coverage:.0%} of frames")
