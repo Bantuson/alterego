@@ -63,16 +63,49 @@ def boost_saturation(frame: np.ndarray, factor: float = 1.12) -> np.ndarray:
     return cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
 
 
-def enhance_frame(frame: np.ndarray) -> np.ndarray:
+def lift_shadows_gamma(frame: np.ndarray, gamma: float = 1.6) -> np.ndarray:
+    """Brighten dark footage with gamma correction (a curve, not a +N).
+
+    Gamma raises shadows a lot and highlights barely at all, so faces
+    come out of the murk without the bright bits clipping to white.
+    Implemented as a 256-entry lookup table: computing the curve once
+    and applying it via LUT is ~100x faster than exponentiating every
+    pixel — the standard trick for any per-pixel tone function.
+    """
+    curve = ((np.arange(256) / 255.0) ** (1.0 / gamma) * 255).astype(np.uint8)
+    return cv2.LUT(frame, curve)
+
+
+def denoise_bilateral(frame: np.ndarray) -> np.ndarray:
+    """Smooth sensor noise while keeping edges sharp.
+
+    Brightening dark footage also brightens its noise, so night mode
+    must denoise. A bilateral filter averages each pixel with its
+    neighbours EXCEPT across strong edges — noise melts, features stay.
+    """
+    return cv2.bilateralFilter(frame, d=5, sigmaColor=40, sigmaSpace=5)
+
+
+def enhance_frame(frame: np.ndarray, night: bool = False) -> np.ndarray:
     """The full grade, in the order that matters:
+    (night: lift shadows, then denoise what the lift amplified,)
     balance color first (so CLAHE works on true tones), then lighting,
     then saturation last (to compensate what correction flattened)."""
+    if night:
+        frame = lift_shadows_gamma(frame)
+        frame = denoise_bilateral(frame)
     frame = white_balance_grayworld(frame)
-    frame = lift_lighting_clahe(frame)
+    frame = lift_lighting_clahe(frame, clip_limit=3.0 if night else 2.0)
     frame = boost_saturation(frame)
     return frame
 
 
-def process_video(src: str | Path, dst: str | Path) -> None:
-    """Grade a whole recording, preserving audio."""
-    stream_video(src, dst, enhance_frame)
+def process_video(src: str | Path, dst: str | Path, night: bool = False) -> None:
+    """Grade a whole recording, preserving audio.
+
+    `night=True` is salvage mode for underlit footage. Honest limits:
+    it recovers visibility, not quality — noise eats fine detail, and
+    a camera that dropped to 10 fps in the dark stays at 10 fps.
+    Real light (or daytime phone footage) beats any algorithm here.
+    """
+    stream_video(src, dst, lambda frame: enhance_frame(frame, night))
