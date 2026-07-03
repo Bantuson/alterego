@@ -35,14 +35,15 @@ uv sync
 # 1. Find your camera and microphone names
 uv run alterego devices
 
-# 2. Audition alter egos live — press N to try new seeds, note the one you like
+# 2. Audition alter egos live — N tries a new seed, K keeps the one you like
+#    (K saves it to alterego.json; disguise uses it automatically from then on)
 uv run alterego preview
 
 # 3. Record camera + screen (press Enter to stop)
 uv run alterego record --camera "Your Camera Name" --mic "Your Mic Name" --screen
 
-# 4. Apply your alter ego (SAME seed every video = consistent identity)
-uv run alterego disguise recordings/take_camera.mp4 --seed 1337
+# 4. Apply your saved alter ego (same seed every video = consistent identity)
+uv run alterego disguise recordings/take_camera.mp4
 
 # 5. Studio lighting and color
 uv run alterego enhance recordings/take_camera_alterego.mp4
