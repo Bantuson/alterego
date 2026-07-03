@@ -117,11 +117,26 @@ def cmd_disguise(args: argparse.Namespace) -> None:
     process_video(args.video, out, seed=seed, strength=strength)
 
 
+def cmd_prep(args: argparse.Namespace) -> None:
+    from .ffmpeg_tools import prep_for_pipeline
+
+    out = args.out or _default_out(args.video, "prep")
+    prep_for_pipeline(args.video, out, max_height=args.max_height)
+    print(f"  saved {out}")
+
+
+def cmd_background(args: argparse.Namespace) -> None:
+    from .background import process_video
+
+    out = args.out or _default_out(args.video, "scene")
+    process_video(args.video, out, image=args.image, blur=args.blur)
+
+
 def cmd_enhance(args: argparse.Namespace) -> None:
     from .enhance import process_video
 
     out = args.out or _default_out(args.video, "graded")
-    process_video(args.video, out)
+    process_video(args.video, out, night=args.night)
 
 
 def cmd_cut(args: argparse.Namespace) -> None:
@@ -168,8 +183,22 @@ def main() -> None:
     p.add_argument("--out")
     p.set_defaults(fn=cmd_disguise)
 
+    p = sub.add_parser("prep", help="normalize phone/outside footage for the pipeline")
+    p.add_argument("video")
+    p.add_argument("--max-height", type=int, default=720, help="downscale cap (default 720)")
+    p.add_argument("--out")
+    p.set_defaults(fn=cmd_prep)
+
+    p = sub.add_parser("background", help="replace or blur the background")
+    p.add_argument("video")
+    p.add_argument("--image", help="backdrop image (omit to blur your real background)")
+    p.add_argument("--blur", type=int, help="backdrop blur amount (default: 31 blur-mode, 9 image-mode)")
+    p.add_argument("--out")
+    p.set_defaults(fn=cmd_background)
+
     p = sub.add_parser("enhance", help="fix lighting, white balance, color")
     p.add_argument("video")
+    p.add_argument("--night", action="store_true", help="salvage mode for underlit footage")
     p.add_argument("--out")
     p.set_defaults(fn=cmd_enhance)
 

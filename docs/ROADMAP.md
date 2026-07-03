@@ -18,14 +18,17 @@ rewriting what exists.
 3. Feed those ranges into the existing `keep_segments` → `cut_video`
    path, merged with the silence ranges.
 
-## Phase 2 — Environment augmentation (background replacement)
+## Phase 2 — Environment augmentation (background replacement) ✅ SHIPPED
 
-You shouldn't have to reveal your room either. MediaPipe's selfie
-segmentation model runs on CPU and returns a per-pixel person mask:
+`alterego background` blurs your real room (default) or composites
+you onto any backdrop image via MediaPipe selfie segmentation.
+`alterego prep` normalizes phone footage (HEVC/variable frame rate →
+H.264/30fps/720p) so any camera can feed the pipeline.
 
-- Blur or replace the background per frame (same `stream_video` loop).
-- A subtle desk/loft background reads better than a fake green-screen
-  look; blur is the safest default.
+Still open in this phase:
+- Color harmonization: automatically match subject/backdrop tones
+  (currently approximated by running `enhance` after `background`).
+- Video backdrops (a looping street plate instead of a still).
 
 ## Phase 3 — Voice privacy
 

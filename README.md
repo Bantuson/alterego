@@ -15,14 +15,32 @@ classical computer vision, built to run on a 4 GB laptop.
 ## The pipeline
 
 ```
-record ──► disguise ──► enhance ──► cut ──► publish
-(ffmpeg)   (MediaPipe    (OpenCV     (ffmpeg
-            + warp)       grading)    silence cut)
+record/prep ──► disguise ──► background ──► enhance ──► cut ──► publish
+(ffmpeg)        (MediaPipe    (segmentation  (OpenCV     (ffmpeg
+                 + warp)       + composite)   grading)    silence cut)
 ```
 
 Every stage reads a video file and writes a new one. You can re-run any
 stage alone, inspect the output between steps, and nothing is ever held
 in memory except a single frame.
+
+Because files are the interface, footage from ANY camera works — the
+webcam recorder is just one way in. Phone footage shot outside in
+daylight beats a webcam at night by more than any algorithm can:
+
+```powershell
+# copy the clip from your phone (USB cable -> This PC -> phone -> DCIM)
+uv run alterego prep phone_clip.mp4     # phone codecs/VFR -> pipeline-friendly 720p
+uv run alterego disguise phone_clip_prep.mp4
+uv run alterego background phone_clip_prep_alterego.mp4 --image street.jpg
+uv run alterego enhance ...             # grade AFTER background: a shared
+uv run alterego cut ...                 # grade visually "glues" a composite
+```
+
+`background` with no `--image` simply blurs your real surroundings
+(privacy, zero setup). With `--image`, it composites you onto any
+backdrop — it is auto-blurred slightly so it reads as camera depth
+of field rather than a green screen.
 
 ## Quickstart
 
@@ -72,9 +90,15 @@ how far apart the eyes sit, how long the nose is. `disguise.py`:
 Because every change is capped at a few percent of face width, the
 result doesn't look edited — you just look like a relative of yourself.
 
-⚠️ **Honest limitation:** this raises the cost of recognizing you; it is
-not cryptographic anonymity. Voice, environment, and what you say still
-identify you. Phase 2 covers voice and background.
+⚠️ **Honest limitations:**
+- This raises the cost of recognizing you; it is not cryptographic
+  anonymity. Your voice and what you say still identify you.
+- The disguise needs to SEE your face. On dark footage, landmark
+  detection fails and frames pass through with your real face —
+  `disguise` now reports its coverage and warns loudly below 90%.
+  Light your face, or record outside. `enhance --night` exists as a
+  salvage mode for watchability, but it cannot restore detail the
+  sensor never captured.
 
 ## Design notes for a 4 GB machine
 
