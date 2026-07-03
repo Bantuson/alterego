@@ -26,9 +26,12 @@ def _default_out(src: str, suffix: str) -> str:
     return str(path.with_name(f"{path.stem}_{suffix}{path.suffix}"))
 
 
-def cmd_devices(_args: argparse.Namespace) -> None:
-    from .recorder import list_devices
+def cmd_devices(args: argparse.Namespace) -> None:
+    from .recorder import list_camera_modes, list_devices
 
+    if args.modes:
+        print(list_camera_modes(args.modes))
+        return
     print(list_devices())
     print('Use the names in quotes above, e.g. --camera "HD WebCam".')
 
@@ -41,18 +44,21 @@ def cmd_record(args: argparse.Namespace) -> None:
         mic=args.mic,
         screen=args.screen,
         out_stem=args.name,
+        fps=args.fps,
+        size=args.size,
     )
 
 
 def cmd_preview(args: argparse.Namespace) -> None:
     """Live webcam preview of the disguise — press N for a new random
-    seed, S to print the current one, Q to quit. Use this to *choose*
-    your alter ego before you ever record."""
+    seed, K to KEEP the current one (saves to alterego.json), Q to
+    quit. Use this to *choose* your alter ego before you ever record."""
     import cv2
     import numpy as np
 
     from .disguise import DisguiseProfile, apply_disguise
     from .faces import FaceLandmarker, LandmarkSmoother
+    from .settings import save_identity
 
     capture = cv2.VideoCapture(args.camera_index)
     if not capture.isOpened():
@@ -62,7 +68,7 @@ def cmd_preview(args: argparse.Namespace) -> None:
     profile = DisguiseProfile.from_seed(seed, args.strength)
     landmarker = FaceLandmarker()
     smoother = LandmarkSmoother()
-    print(f"seed={seed} | N = new seed, S = show seed, Q = quit")
+    print(f"seed={seed} | N = new seed, K = keep this face, Q = quit")
 
     while True:
         ok, frame = capture.read()
@@ -83,8 +89,9 @@ def cmd_preview(args: argparse.Namespace) -> None:
             seed = int(np.random.default_rng().integers(0, 100_000))
             profile = DisguiseProfile.from_seed(seed, args.strength)
             print(f"seed={seed}")
-        if key == ord("s"):
-            print(f"current seed: {seed} (strength {args.strength})")
+        if key == ord("k"):
+            path = save_identity(seed, args.strength)
+            print(f"✓ kept seed={seed} -> {path} (disguise now uses it by default)")
 
     capture.release()
     cv2.destroyAllWindows()
@@ -93,9 +100,21 @@ def cmd_preview(args: argparse.Namespace) -> None:
 
 def cmd_disguise(args: argparse.Namespace) -> None:
     from .disguise import process_video
+    from .settings import load_identity
+
+    seed, strength = args.seed, args.strength
+    if seed is None:
+        saved = load_identity()
+        if saved is None:
+            raise SystemExit(
+                "No seed given and no saved identity. Run `alterego preview` "
+                "and press K on a face you like, or pass --seed."
+            )
+        seed, strength = saved
+        print(f"using saved identity: seed={seed} strength={strength}")
 
     out = args.out or _default_out(args.video, "alterego")
-    process_video(args.video, out, seed=args.seed, strength=args.strength)
+    process_video(args.video, out, seed=seed, strength=strength)
 
 
 def cmd_enhance(args: argparse.Namespace) -> None:
@@ -119,15 +138,21 @@ def main() -> None:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("devices", help="list cameras and microphones").set_defaults(
-        fn=cmd_devices
+    p = sub.add_parser("devices", help="list cameras and microphones")
+    p.add_argument(
+        "--modes",
+        metavar="CAMERA",
+        help="show supported resolutions/fps for this camera",
     )
+    p.set_defaults(fn=cmd_devices)
 
     p = sub.add_parser("record", help="record webcam and/or screen until Enter")
     p.add_argument("--camera", help='camera name from `alterego devices`')
     p.add_argument("--mic", help='microphone name from `alterego devices`')
     p.add_argument("--screen", action="store_true", help="also record the screen")
     p.add_argument("--name", default="take", help="output filename stem")
+    p.add_argument("--fps", type=int, help="force a frame rate (default: camera native)")
+    p.add_argument("--size", help="force a resolution like 640x480 (default: camera native)")
     p.set_defaults(fn=cmd_record)
 
     p = sub.add_parser("preview", help="live disguise preview to pick a seed")
@@ -138,7 +163,7 @@ def main() -> None:
 
     p = sub.add_parser("disguise", help="apply your alter ego to a recording")
     p.add_argument("video")
-    p.add_argument("--seed", type=int, required=True, help="your alter ego seed")
+    p.add_argument("--seed", type=int, help="alter ego seed (default: saved identity)")
     p.add_argument("--strength", type=float, default=1.0)
     p.add_argument("--out")
     p.set_defaults(fn=cmd_disguise)

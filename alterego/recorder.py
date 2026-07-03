@@ -16,6 +16,7 @@ Encoding choices, and why:
 from __future__ import annotations
 
 import subprocess
+import time
 from pathlib import Path
 
 from .ffmpeg_tools import find_ffmpeg, probe_stderr
@@ -38,6 +39,16 @@ def list_devices() -> str:
     which is why we read stderr instead of checking the exit code.
     """
     return probe_stderr(["-list_devices", "true", "-f", "dshow", "-i", "dummy"])
+
+
+def list_camera_modes(camera: str) -> str:
+    """Return the resolutions and frame rates a camera actually supports.
+
+    dshow rejects any mode the hardware doesn't offer (a cheap webcam
+    often maxes out at 640x480), so we never *force* a mode by default —
+    but if you want to pick one explicitly, this shows the menu.
+    """
+    return probe_stderr(["-f", "dshow", "-list_options", "true", "-i", f"video={camera}"])
 
 
 def _start_ffmpeg(args: list[str]) -> subprocess.Popen:
@@ -67,8 +78,8 @@ def record(
     mic: str | None,
     screen: bool,
     out_stem: str = "take",
-    fps: int = 30,
-    size: str = "1280x720",
+    fps: int | None = None,
+    size: str | None = None,
 ) -> list[Path]:
     """Record camera and/or screen until the user presses Enter.
 
@@ -77,6 +88,10 @@ def record(
     live would double the CPU load and risk dropped frames on a small
     machine. Combining the two videos is an editing decision anyway —
     better made in post, when you can retry for free.
+
+    `fps`/`size` default to None = let the camera use its native mode.
+    dshow hard-rejects any mode the hardware doesn't support, so
+    forcing one is opt-in (check `alterego devices --modes` first).
     """
     RECORDINGS_DIR.mkdir(exist_ok=True)
     procs: list[subprocess.Popen] = []
@@ -86,13 +101,13 @@ def record(
         cam_out = RECORDINGS_DIR / f"{out_stem}_camera.mp4"
         # dshow takes video and audio in one input string, ':' separated.
         input_spec = f"video={camera}" + (f":audio={mic}" if mic else "")
-        args = [
-            "-y",
-            "-f", "dshow",
-            # Big real-time buffer so a slow disk doesn't drop frames.
-            "-rtbufsize", "100M",
-            "-framerate", str(fps),
-            "-video_size", size,
+        args = ["-y", "-f", "dshow", "-rtbufsize", "100M"]
+        # Big real-time buffer (above) so a slow disk doesn't drop frames.
+        if fps:
+            args += ["-framerate", str(fps)]
+        if size:
+            args += ["-video_size", size]
+        args += [
             "-i", input_spec,
             *ENCODE_ARGS,
             "-c:a", "aac",
@@ -117,6 +132,23 @@ def record(
 
     if not procs:
         raise ValueError("Nothing to record: pass a camera name and/or --screen.")
+
+    # A capture process that is going to fail (device busy, unsupported
+    # mode, typo'd name) dies within a second or two. Catch that NOW —
+    # nothing hurts like finding out after a 20-minute take.
+    time.sleep(2.0)
+    dead = [(p, out) for p, out in zip(procs, outputs) if p.poll() is not None]
+    if dead:
+        for _, out in dead:
+            print(f"✗ {out.name} failed to start.")
+        print(
+            "  Common causes: camera already in use (close the preview!), "
+            "or a mode it doesn't support — see `alterego devices --modes`."
+        )
+        for proc, out in zip(procs, outputs):
+            if proc.poll() is None:
+                _stop_ffmpeg(proc)  # don't leave the survivor recording
+        raise SystemExit(1)
 
     print(f"● Recording {len(procs)} stream(s)... press Enter to stop.")
     input()
