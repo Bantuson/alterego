@@ -83,6 +83,36 @@ def get_duration(video: str | Path) -> float:
     return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
 
 
+def prep_for_pipeline(src: str | Path, out: str | Path, max_height: int = 720) -> None:
+    """Normalize any outside footage (usually phone video) for the pipeline.
+
+    Phone cameras produce two things OpenCV chokes on:
+      * HEVC/H.265 encoding — great compression, poor decoder support;
+      * variable frame rate — frames arrive when the sensor feels like
+        it, which breaks any tool that assumes a steady clock.
+
+    This transcodes to the boring, universally-readable combination
+    (H.264, constant 30 fps) and caps height at `max_height` so a
+    4K phone clip doesn't take an hour to disguise on a small CPU.
+    720p is plenty for social media.
+    """
+    run_ffmpeg(
+        [
+            "-y",
+            "-i", str(src),
+            # fps first (fixes variable frame rate), then scale.
+            # -2 = "pick a width that keeps aspect and stays even"
+            # (H.264 requires even dimensions).
+            "-vf", f"fps=30,scale=-2:'min({max_height},ih)'",
+            "-c:v", "libx264",
+            "-preset", "fast",
+            "-crf", "20",
+            "-c:a", "aac",
+            str(out),
+        ]
+    )
+
+
 def remux_audio(processed_video: str | Path, original_video: str | Path, out: str | Path) -> None:
     """Copy the audio track from the original file onto a processed one.
 
