@@ -66,8 +66,9 @@ uv run alterego disguise recordings/take_camera.mp4
 # 5. Studio lighting and color
 uv run alterego enhance recordings/take_camera_alterego.mp4
 
-# 6. Cut the silent gaps
-uv run alterego cut recordings/take_camera_alterego_graded.mp4
+# 6. Cut the silent gaps — add --fillers to also cut "um"/"uh"
+#    (filler removal needs: uv sync --extra speech)
+uv run alterego cut recordings/take_camera_alterego_graded.mp4 --fillers
 ```
 
 Run the tests with `uv run pytest`.

@@ -5,18 +5,13 @@ record → disguise → enhance → cut. Everything below builds on those
 same "one file in, one file out" stages, so nothing here requires
 rewriting what exists.
 
-## Phase 1.5 — Filler-word removal (next weekend, ~half day)
+## Phase 1.5 — Filler-word removal ✅ SHIPPED
 
-`cuts.py` already knows how to remove arbitrary time ranges. Fillers
-("um", "uh", "like", "so yeah") just need *word-level timestamps*:
-
-1. `uv sync --extra speech` (adds `faster-whisper`; the `tiny` model is
-   ~75 MB and runs in <1 GB RAM with int8 quantization — fits the 4 GB
-   machine).
-2. New module `fillers.py`: transcribe with `word_timestamps=True`,
-   collect the time ranges of words in a FILLERS set.
-3. Feed those ranges into the existing `keep_segments` → `cut_video`
-   path, merged with the silence ranges.
+`cut --fillers` transcribes with faster-whisper (`tiny`, int8, fits
+4 GB RAM), finds filler-word time ranges, and merges them with the
+silence cuts. Unambiguous fillers (um/uh/erm/...) are cut by default;
+context-dependent words are opt-in: `--also-cut like basically`.
+Install once with `uv sync --extra speech`.
 
 ## Phase 2 — Environment augmentation (background replacement) ✅ SHIPPED
 
