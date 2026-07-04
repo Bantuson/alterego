@@ -18,6 +18,9 @@ from .ffmpeg_tools import get_duration, probe_stderr, run_ffmpeg
 
 Segment = tuple[float, float]  # (start_seconds, end_seconds)
 
+# The beat of quiet kept on each side of every cut (see keep_segments).
+KEEP_PADDING = 0.15
+
 
 def detect_silences(
     video: str | Path,
@@ -47,10 +50,27 @@ def detect_silences(
     return list(zip(starts, ends))
 
 
+def merge_ranges(ranges: list[Segment]) -> list[Segment]:
+    """Sort and fuse overlapping/touching ranges into a clean list.
+
+    Needed once cuts come from two sources (silences AND fillers): an
+    "um" inside a pause produces overlapping ranges, and keep_segments
+    assumes its input is sorted and non-overlapping.
+    """
+    merged: list[Segment] = []
+    for start, end in sorted(ranges):
+        if merged and start <= merged[-1][1]:
+            last_start, last_end = merged[-1]
+            merged[-1] = (last_start, max(last_end, end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
 def keep_segments(
     silences: list[Segment],
     duration: float,
-    padding: float = 0.15,
+    padding: float = KEEP_PADDING,
 ) -> list[Segment]:
     """Invert silence ranges into the speech ranges we keep.
 
@@ -118,16 +138,36 @@ def process_video(
     dst: str | Path,
     noise_db: float = -35.0,
     min_silence: float = 0.6,
+    cut_fillers: bool = False,
+    also_cut: tuple[str, ...] = (),
 ) -> None:
-    """Detect silences, report the savings, and write the tightened cut."""
+    """Detect silences (and optionally fillers), then write the tight cut."""
     duration = get_duration(src)
     silences = detect_silences(src, noise_db, min_silence)
-    segments = keep_segments(silences, duration)
+    remove = list(silences)
+
+    filler_count = 0
+    if cut_fillers:
+        from .fillers import filler_ranges, transcribe_words
+
+        print("  transcribing (first run downloads a 75 MB model)...")
+        ranges = filler_ranges(transcribe_words(src), also_cut)
+        filler_count = len(ranges)
+        # keep_segments retains KEEP_PADDING of audio on each side of
+        # every cut — a courtesy for silences that would let a short
+        # "um" escape whole. Pre-expanding filler ranges by the same
+        # amount cancels that out, so the filler is removed exactly.
+        remove += [
+            (max(start - KEEP_PADDING, 0.0), end + KEEP_PADDING)
+            for start, end in ranges
+        ]
+
+    segments = keep_segments(merge_ranges(remove), duration)
 
     kept = sum(end - start for start, end in segments)
     print(
-        f"  {len(silences)} silences found — keeping {kept:.1f}s "
-        f"of {duration:.1f}s ({kept / duration:.0%})"
+        f"  {len(silences)} silences + {filler_count} fillers — keeping "
+        f"{kept:.1f}s of {duration:.1f}s ({kept / duration:.0%})"
     )
     cut_video(src, dst, segments)
     print(f"  saved {dst}")
