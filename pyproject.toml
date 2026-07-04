@@ -3,6 +3,8 @@ name = "alterego"
 version = "0.1.0"
 description = "Terminal-first content studio: record, disguise your face, enhance, and cut — build in public without showing your real face."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = [
     # Frame-by-frame video processing (reading, warping, writing)
