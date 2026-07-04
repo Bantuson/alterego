@@ -143,7 +143,14 @@ def cmd_cut(args: argparse.Namespace) -> None:
     from .cuts import process_video
 
     out = args.out or _default_out(args.video, "tight")
-    process_video(args.video, out, noise_db=args.noise_db, min_silence=args.min_silence)
+    process_video(
+        args.video,
+        out,
+        noise_db=args.noise_db,
+        min_silence=args.min_silence,
+        cut_fillers=args.fillers,
+        also_cut=tuple(args.also_cut),
+    )
 
 
 def main() -> None:
@@ -202,10 +209,18 @@ def main() -> None:
     p.add_argument("--out")
     p.set_defaults(fn=cmd_enhance)
 
-    p = sub.add_parser("cut", help="remove silent gaps")
+    p = sub.add_parser("cut", help="remove silent gaps (and fillers with --fillers)")
     p.add_argument("video")
     p.add_argument("--noise-db", type=float, default=-35.0)
     p.add_argument("--min-silence", type=float, default=0.6)
+    p.add_argument("--fillers", action="store_true", help="also cut um/uh (needs speech extra)")
+    p.add_argument(
+        "--also-cut",
+        nargs="*",
+        default=[],
+        metavar="WORD",
+        help='extra words to cut, e.g. --also-cut like basically',
+    )
     p.add_argument("--out")
     p.set_defaults(fn=cmd_cut)
 
