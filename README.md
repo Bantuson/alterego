@@ -15,9 +15,16 @@ classical computer vision, built to run on a 4 GB laptop.
 ## The pipeline
 
 ```
-record/prep ──► disguise ──► background ──► enhance ──► cut ──► publish
-(ffmpeg)        (MediaPipe    (segmentation  (OpenCV     (ffmpeg
-                 + warp)       + composite)   grading)    silence cut)
+record/prep ─► disguise ─► background ─► enhance ─► cut ─► voice ─► clip
+(ffmpeg)       (MediaPipe   (segmentation (OpenCV    (silence (pitch  (Remotion
+                + warp)      + composite)  grading)   +fillers) shift)  9:16 brand)
+```
+
+Or all of it in one command:
+
+```powershell
+uv run alterego ship take.mp4 --image street.jpg
+uv run alterego clip take_ship.mp4 --title "Building a CV pipeline on 4GB of RAM"
 ```
 
 Every stage reads a video file and writes a new one. You can re-run any
@@ -93,7 +100,9 @@ result doesn't look edited — you just look like a relative of yourself.
 
 ⚠️ **Honest limitations:**
 - This raises the cost of recognizing you; it is not cryptographic
-  anonymity. Your voice and what you say still identify you.
+  anonymity. The `voice` stage shifts your pitch (seeded, consistent —
+  same rule as the face), but *what you say* — names, places, your
+  story — identifies you more than any biometric.
 - The disguise needs to SEE your face. On dark footage, landmark
   detection fails and frames pass through with your real face —
   `disguise` now reports its coverage and warns loudly below 90%.

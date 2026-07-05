@@ -22,3 +22,6 @@ alterego.json
 .vscode/
 .idea/
 Thumbs.db
+
+# Per-render staging for the clip command - may contain YOUR footage.
+remotion/public/

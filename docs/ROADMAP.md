@@ -20,38 +20,39 @@ you onto any backdrop image via MediaPipe selfie segmentation.
 `alterego prep` normalizes phone footage (HEVC/variable frame rate →
 H.264/30fps/720p) so any camera can feed the pipeline.
 
-Still open in this phase:
-- Color harmonization: automatically match subject/backdrop tones
-  (currently approximated by running `enhance` after `background`).
-- Video backdrops (a looping street plate instead of a still).
+Color harmonization (`--harmonize`, Reinhard transfer toward the
+backdrop's palette) and looping video plates also shipped.
 
-## Phase 3 — Voice privacy
+## Phase 3 — Voice privacy ✅ SHIPPED
 
-The disguise protects your face; your voice is still you. Options in
-increasing quality/cost order:
+`alterego voice` pitch-shifts by a factor derived from your identity
+seed (salted, so voice and face are independent draws; the ~1.0
+"does nothing" zone is designed out). Uses ffmpeg's rubberband when
+available, asetrate+atempo fallback otherwise. Verified by FFT.
 
-- Pitch/formant shift with ffmpeg's `rubberband` or `asetrate` chains
-  (local, free, robotic if pushed hard).
-- RVC-style voice conversion on Google Colab free GPU (great quality;
-  batch process the audio track there, remux locally).
+Still open: RVC-style voice *conversion* on Colab free GPU for
+higher-grade anonymity than a pitch shift.
 
-## Phase 4 — Remotion social clips
+## Phase 4 — Remotion social clips ✅ SHIPPED
 
-Turn polished takes into branded social posts (Node/React is already
-installed):
+`alterego clip take.mp4 --title "..."` renders a branded 9:16 clip:
+dark launch-page look, hook title, rounded video card, word-timed
+TikTok captions (whisper timestamps → @remotion/captions), handle +
+progress bar. Design lives in `remotion/src/` (React); data decisions
+live in `alterego/clips.py` (Python); they meet at a props JSON.
+Renders with `--concurrency=1` to respect 4 GB of RAM.
 
-- A Remotion project with brand tokens (colors, fonts, lower thirds,
-  captions, progress bar) — the "VC-funded tech bro" skin.
-- A Python `clips.py` that emits a JSON edit decision list (which
-  segments, which captions) that the Remotion composition consumes.
-- Render locally for short clips, or on GitHub Actions (2,000 free
-  min/month) when the machine is the bottleneck.
-- Add a custom Claude Code skill encoding your brand rules (hook in
-  first 2 s, captions always on, 9:16 crop, end-card CTA) so every
-  edit follows the same playbook.
+Still open: render on GitHub Actions (2,000 free min/month) when the
+machine is the bottleneck; a custom Claude Code brand skill.
 
-## Phase 5 — One-command publish pipeline
+## Phase 5 — One-command publish pipeline ✅ SHIPPED
 
-`alterego ship take.mp4` = disguise → enhance → cut → fillers →
-captions → Remotion render → thumbnail. A single command from raw
-take to postable clip.
+`alterego ship take.mp4 [--image street.jpg]` = disguise → background
+→ enhance → cut+fillers → voice, then `alterego clip` for the branded
+render. Stage order is deliberate: detection sees raw pixels, grading
+glues the composite, whisper hears the natural voice.
+
+## Beyond v1
+
+- RVC voice conversion (Colab) · GitHub Actions clip rendering ·
+  brand skill · thumbnails · direct platform upload.
