@@ -142,6 +142,21 @@ def cmd_enhance(args: argparse.Namespace) -> None:
     process_video(args.video, out, night=args.night)
 
 
+def cmd_ship(args: argparse.Namespace) -> None:
+    from .pipeline import ship
+
+    ship(
+        args.video,
+        out=args.out,
+        image=args.image,
+        night=args.night,
+        fillers=not args.no_fillers,
+        voice=not args.no_voice,
+        background=not args.no_background,
+        keep=args.keep,
+    )
+
+
 def cmd_voice(args: argparse.Namespace) -> None:
     from .settings import load_identity
     from .voice import factor_from_seed, process_video
@@ -175,6 +190,15 @@ def cmd_cut(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
+    # Windows terminals often use a legacy encoding (cp1252) that can't
+    # print characters like ⚠ or ✓ — and Python then CRASHES on the
+    # print. `errors="replace"` swaps unprintable characters for '?'
+    # instead. A status symbol degrading beats a pipeline dying.
+    import sys
+
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")
+
     parser = argparse.ArgumentParser(
         prog="alterego",
         description="Terminal content studio: record, disguise, enhance, cut.",
@@ -233,6 +257,17 @@ def main() -> None:
     p.add_argument("--night", action="store_true", help="salvage mode for underlit footage")
     p.add_argument("--out")
     p.set_defaults(fn=cmd_enhance)
+
+    p = sub.add_parser("ship", help="full pipeline: disguise, background, enhance, cut, voice")
+    p.add_argument("video")
+    p.add_argument("--image", help="backdrop image or video plate for the background stage")
+    p.add_argument("--night", action="store_true", help="salvage mode for underlit footage")
+    p.add_argument("--no-fillers", action="store_true", help="skip filler-word removal")
+    p.add_argument("--no-voice", action="store_true", help="skip the voice shift")
+    p.add_argument("--no-background", action="store_true", help="skip background blur/replace")
+    p.add_argument("--keep", action="store_true", help="keep intermediate stage files")
+    p.add_argument("--out")
+    p.set_defaults(fn=cmd_ship)
 
     p = sub.add_parser("voice", help="pitch-shift your voice to your alter ego's")
     p.add_argument("video")
