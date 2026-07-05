@@ -1,1 +1,2 @@
-@import "tailwindcss";
+/* Global styles. The clip look is styled inline in the components;
+   this file exists because Root.tsx imports it (Remotion convention). */
