@@ -142,6 +142,24 @@ def cmd_enhance(args: argparse.Namespace) -> None:
     process_video(args.video, out, night=args.night)
 
 
+def cmd_voice(args: argparse.Namespace) -> None:
+    from .settings import load_identity
+    from .voice import factor_from_seed, process_video
+
+    factor = args.factor
+    if factor is None:
+        saved = load_identity()
+        if saved is None:
+            raise SystemExit(
+                "No --factor given and no saved identity to derive one from. "
+                "Run `alterego preview` and press K, or pass --factor 1.05."
+            )
+        factor = factor_from_seed(saved[0])
+
+    out = args.out or _default_out(args.video, "voiced")
+    process_video(args.video, out, factor)
+
+
 def cmd_cut(args: argparse.Namespace) -> None:
     from .cuts import process_video
 
@@ -215,6 +233,12 @@ def main() -> None:
     p.add_argument("--night", action="store_true", help="salvage mode for underlit footage")
     p.add_argument("--out")
     p.set_defaults(fn=cmd_enhance)
+
+    p = sub.add_parser("voice", help="pitch-shift your voice to your alter ego's")
+    p.add_argument("video")
+    p.add_argument("--factor", type=float, help="pitch ratio (default: derived from saved seed)")
+    p.add_argument("--out")
+    p.set_defaults(fn=cmd_voice)
 
     p = sub.add_parser("cut", help="remove silent gaps (and fillers with --fillers)")
     p.add_argument("video")
