@@ -93,42 +93,112 @@ def composite(frame: np.ndarray, mask: np.ndarray, background: np.ndarray) -> np
     return blended.astype(np.uint8)
 
 
+def harmonize(frame: np.ndarray, backdrop: np.ndarray, amount: float = 0.4) -> np.ndarray:
+    """Nudge the subject's colors toward the backdrop's palette.
+
+    This is (a gentle version of) Reinhard color transfer: match the
+    mean and spread of each LAB channel to the backdrop's statistics.
+    Composites fail the eye when subject and scene disagree about what
+    color the light is — this makes them agree. `amount` blends between
+    untouched (0.0) and fully matched (1.0); full transfer looks like a
+    tint, ~0.4 just makes the light plausible.
+    """
+    if amount <= 0:
+        return frame
+    frame_lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB).astype(np.float32)
+    backdrop_lab = cv2.cvtColor(backdrop, cv2.COLOR_BGR2LAB).astype(np.float32)
+
+    f_mean = frame_lab.reshape(-1, 3).mean(axis=0)
+    f_std = frame_lab.reshape(-1, 3).std(axis=0)
+    b_mean = backdrop_lab.reshape(-1, 3).mean(axis=0)
+    b_std = backdrop_lab.reshape(-1, 3).std(axis=0)
+
+    # Clip the spread ratio so a flat backdrop (blurred = low variance)
+    # can't crush the subject's contrast to nothing.
+    ratio = np.clip(b_std / (f_std + 1e-6), 0.6, 1.6)
+    matched = (frame_lab - f_mean) * ratio + b_mean
+
+    blended = frame_lab * (1 - amount) + matched * amount
+    blended = np.clip(blended, 0, 255).astype(np.uint8)
+    return cv2.cvtColor(blended, cv2.COLOR_LAB2BGR)
+
+
+VIDEO_SUFFIXES = {".mp4", ".mov", ".mkv", ".webm", ".avi"}
+
+
+class BackdropSource:
+    """Yields one fitted, pre-blurred backdrop frame per video frame.
+
+    Three interchangeable modes, chosen by what `path` is:
+      * None        -> the subject's own room, heavily blurred (privacy)
+      * still image -> loaded once, fitted once, reused every frame
+      * video file  -> read frame-by-frame and looped when it runs out,
+                       so a 10-second street plate covers a 3-minute take
+    """
+
+    def __init__(self, path: str | Path | None, blur: int | None) -> None:
+        self.still: np.ndarray | None = None
+        self.video: cv2.VideoCapture | None = None
+        if path is not None:
+            if Path(path).suffix.lower() in VIDEO_SUFFIXES:
+                self.video = cv2.VideoCapture(str(path))
+                if not self.video.isOpened():
+                    raise FileNotFoundError(f"Could not open backdrop video: {path}")
+            else:
+                self.still = cv2.imread(str(path))
+                if self.still is None:
+                    raise FileNotFoundError(f"Could not read backdrop image: {path}")
+        # Heavy blur (31) hides a real room; light blur (9) on a fake
+        # backdrop just sells the "portrait mode" depth illusion.
+        self.blur = blur if blur is not None else (31 if path is None else 9)
+        self._kernel = self.blur * 2 + 1  # blur amount -> odd kernel size
+        self._fitted_still: np.ndarray | None = None
+
+    def _blurred(self, image: np.ndarray) -> np.ndarray:
+        if self.blur <= 0:
+            return image
+        return cv2.GaussianBlur(image, (self._kernel, self._kernel), 0)
+
+    def frame_for(self, frame: np.ndarray) -> np.ndarray:
+        height, width = frame.shape[:2]
+        if self.video is not None:
+            ok, plate = self.video.read()
+            if not ok:  # plate ended before the take: loop from the top
+                self.video.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                ok, plate = self.video.read()
+                if not ok:
+                    raise RuntimeError("Backdrop video has no readable frames")
+            return self._blurred(fit_to_frame(plate, width, height))
+        if self.still is not None:
+            if self._fitted_still is None:  # fit + blur once, reuse forever
+                self._fitted_still = self._blurred(fit_to_frame(self.still, width, height))
+            return self._fitted_still
+        return self._blurred(frame)  # your own room, beyond recognition
+
+    def close(self) -> None:
+        if self.video is not None:
+            self.video.release()
+
+
 def process_video(
     src: str | Path,
     dst: str | Path,
     image: str | Path | None = None,
     blur: int | None = None,
+    harmonize_amount: float = 0.4,
 ) -> None:
-    """Swap the background for `image`, or blur the real one if no image.
-
-    `blur` controls the backdrop's Gaussian blur. Defaults: heavy (31)
-    when hiding your real room, light (9) on a replacement image —
-    just enough to sell the "portrait mode" depth illusion.
-    """
+    """Swap the background for `image` (a photo OR a video plate), or
+    blur the real one if no image. See BackdropSource for the modes."""
     segmenter = PersonSegmenter()
-    backdrop: np.ndarray | None = None
-    if image is not None:
-        backdrop = cv2.imread(str(image))
-        if backdrop is None:
-            raise FileNotFoundError(f"Could not read background image: {image}")
-    blur = blur if blur is not None else (9 if backdrop is not None else 31)
-    kernel = blur * 2 + 1  # blur amount -> odd Gaussian kernel size
-
-    fitted: np.ndarray | None = None  # backdrop resized once, on first frame
+    source = BackdropSource(image, blur)
+    # Harmonizing toward your own blurred room is a no-op with extra
+    # steps — only color-match when there is a foreign backdrop.
+    harmonizing = image is not None and harmonize_amount > 0
 
     def swap_background(frame: np.ndarray) -> np.ndarray:
-        nonlocal fitted
-        height, width = frame.shape[:2]
-        if backdrop is not None:
-            if fitted is None:
-                fitted = fit_to_frame(backdrop, width, height)
-                if blur > 0:
-                    fitted = cv2.GaussianBlur(fitted, (kernel, kernel), 0)
-            bg = fitted
-        else:
-            # No image given: the "backdrop" is your own room, blurred
-            # beyond recognition. Privacy with zero setup.
-            bg = cv2.GaussianBlur(frame, (kernel, kernel), 0)
+        bg = source.frame_for(frame)
+        if harmonizing:
+            frame = harmonize(frame, bg, harmonize_amount)
         mask = feather(segmenter.mask(frame))
         return composite(frame, mask, bg)
 
@@ -136,3 +206,4 @@ def process_video(
         stream_video(src, dst, swap_background)
     finally:
         segmenter.close()
+        source.close()
