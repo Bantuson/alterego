@@ -129,7 +129,10 @@ def cmd_background(args: argparse.Namespace) -> None:
     from .background import process_video
 
     out = args.out or _default_out(args.video, "scene")
-    process_video(args.video, out, image=args.image, blur=args.blur)
+    process_video(
+        args.video, out, image=args.image, blur=args.blur,
+        harmonize_amount=args.harmonize,
+    )
 
 
 def cmd_enhance(args: argparse.Namespace) -> None:
@@ -198,8 +201,12 @@ def main() -> None:
 
     p = sub.add_parser("background", help="replace or blur the background")
     p.add_argument("video")
-    p.add_argument("--image", help="backdrop image (omit to blur your real background)")
+    p.add_argument("--image", help="backdrop image OR video plate (omit to blur your real background)")
     p.add_argument("--blur", type=int, help="backdrop blur amount (default: 31 blur-mode, 9 image-mode)")
+    p.add_argument(
+        "--harmonize", type=float, default=0.4,
+        help="color-match subject to backdrop, 0=off..1=full (default 0.4)",
+    )
     p.add_argument("--out")
     p.set_defaults(fn=cmd_background)
 
