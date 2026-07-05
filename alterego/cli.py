@@ -142,6 +142,13 @@ def cmd_enhance(args: argparse.Namespace) -> None:
     process_video(args.video, out, night=args.night)
 
 
+def cmd_clip(args: argparse.Namespace) -> None:
+    from .clips import render
+
+    out = args.out or _default_out(args.video, "clip")
+    render(args.video, out, title=args.title, handle=args.handle, accent=args.accent)
+
+
 def cmd_ship(args: argparse.Namespace) -> None:
     from .pipeline import ship
 
@@ -257,6 +264,14 @@ def main() -> None:
     p.add_argument("--night", action="store_true", help="salvage mode for underlit footage")
     p.add_argument("--out")
     p.set_defaults(fn=cmd_enhance)
+
+    p = sub.add_parser("clip", help="render a branded 9:16 social clip (Remotion)")
+    p.add_argument("video", help="a polished take (ideally the output of ship)")
+    p.add_argument("--title", required=True, help="the hook line shown at the top")
+    p.add_argument("--handle", default="@alterego", help="your public handle")
+    p.add_argument("--accent", default="#39E508", help="brand accent color")
+    p.add_argument("--out")
+    p.set_defaults(fn=cmd_clip)
 
     p = sub.add_parser("ship", help="full pipeline: disguise, background, enhance, cut, voice")
     p.add_argument("video")
