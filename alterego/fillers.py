@@ -52,7 +52,10 @@ def transcribe_words(video: str | Path) -> list[Word]:
     words: list[Word] = []
     for segment in segments:  # segments is a generator: streams, low RAM
         for word in segment.words or []:
-            words.append((_normalize(word.word), word.start, word.end))
+            # Keep whisper's RAW text (casing, punctuation, the leading
+            # space) — captions need it verbatim; filler matching
+            # normalizes its own copy at comparison time.
+            words.append((word.word, word.start, word.end))
     return words
 
 
@@ -71,5 +74,5 @@ def filler_ranges(
     return [
         (max(start - padding, 0.0), end + padding)
         for text, start, end in words
-        if text in targets
+        if _normalize(text) in targets
     ]

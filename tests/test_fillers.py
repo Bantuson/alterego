@@ -7,10 +7,9 @@ from alterego.fillers import filler_ranges
 
 
 def test_fillers_are_found_despite_whisper_punctuation():
-    # Whisper emits words like " Um," — _normalize handles that before
-    # these tuples reach filler_ranges, so here we test the clean path
-    # plus the padding.
-    words = [("um", 1.0, 1.3), ("hello", 1.4, 1.8), ("uh", 2.0, 2.2)]
+    # Whisper emits RAW words like " Um," (leading space, casing,
+    # punctuation) — filler matching must normalize its own copy.
+    words = [(" Um,", 1.0, 1.3), (" hello", 1.4, 1.8), (" uh...", 2.0, 2.2)]
     ranges = filler_ranges(words, padding=0.0)
     assert ranges == [(1.0, 1.3), (2.0, 2.2)]
 
