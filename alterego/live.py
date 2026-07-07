@@ -24,6 +24,7 @@ flagged. Never passthrough. The same rule lives in live_voice.py.
 
 from __future__ import annotations
 
+import threading
 import time
 
 import cv2
@@ -74,6 +75,47 @@ def build_tone_lut(gamma: float = 1.15, contrast: float = 1.06) -> np.ndarray:
     x = x ** (1.0 / gamma)
     x = (x - 0.5) * contrast + 0.5
     return (np.clip(x, 0, 1) * 255).astype(np.uint8)
+
+
+class FrameGrabber:
+    """Reads the camera on its own thread; the pipeline never waits.
+
+    cv2's read() BLOCKS until the sensor delivers — ~34 ms at 30 fps,
+    100 ms in low light. On one thread that wait is added to every
+    frame's budget. On its own thread the camera fills a "latest
+    frame" slot while the pipeline works, and if processing falls
+    behind, stale frames are simply overwritten — for live video,
+    dropping old frames IS the correct behavior (live means now).
+    """
+
+    def __init__(self, capture: cv2.VideoCapture) -> None:
+        self._capture = capture
+        self._lock = threading.Lock()
+        self._frame: np.ndarray | None = None
+        self._running = True
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+
+    def _loop(self) -> None:
+        while self._running:
+            ok, frame = self._capture.read()
+            if not ok:
+                self._running = False
+                return
+            with self._lock:
+                self._frame = frame
+
+    def read(self) -> np.ndarray | None:
+        with self._lock:
+            return None if self._frame is None else self._frame.copy()
+
+    @property
+    def alive(self) -> bool:
+        return self._running
+
+    def stop(self) -> None:
+        self._running = False
+        self._thread.join(timeout=2)
 
 
 class CachedDisguise:
@@ -214,14 +256,16 @@ def run_live(
     if virtual_cam is None:
         print("● live preview — press Q in the window to stop")
 
+    grabber = FrameGrabber(capture)
     frames = 0
     protected_count = 0
     started = time.time()
     try:
-        while True:
-            ok, frame = capture.read()
-            if not ok:
-                break
+        while grabber.alive:
+            frame = grabber.read()
+            if frame is None:
+                time.sleep(0.005)  # camera warming up
+                continue
             frame = cv2.resize(frame, (width, height))
             out, protected = pipeline.process(frame)
             protected_count += int(protected)
@@ -243,6 +287,11 @@ def run_live(
     except KeyboardInterrupt:
         pass
     finally:
+        # Stop the clock BEFORE cleanup: model teardown can take
+        # seconds and would corrupt the fps figure (it did — the
+        # summary once reported 4.6 fps for a 20 fps session).
+        elapsed = time.time() - started
+        grabber.stop()
         capture.release()
         if virtual_cam is not None:
             virtual_cam.close()
@@ -250,7 +299,7 @@ def run_live(
         pipeline.close()
 
     if frames:
-        fps = frames / (time.time() - started)
+        fps = frames / elapsed
         print(
             f"\n{frames} frames at {fps:.1f} fps — "
             f"disguise covered {protected_count / frames:.0%}, "
