@@ -142,6 +142,53 @@ def cmd_enhance(args: argparse.Namespace) -> None:
     process_video(args.video, out, night=args.night)
 
 
+def cmd_live(args: argparse.Namespace) -> None:
+    from .settings import load_identity
+
+    identity = load_identity()
+    if identity is None:
+        raise SystemExit(
+            "live needs your saved identity. Run `alterego preview`, press K."
+        )
+    seed, strength = identity
+
+    if args.list_audio:
+        from .live_voice import list_audio_devices
+
+        print(list_audio_devices())
+        return
+
+    if args.voice:
+        # Voice runs on its own thread: audio blocks arrive on a hard
+        # 23 ms clock that must never wait for a video frame.
+        import threading
+
+        from .live_voice import run_voice_loop
+        from .voice import factor_from_seed
+
+        threading.Thread(
+            target=run_voice_loop,
+            kwargs={
+                "factor": factor_from_seed(seed),
+                "input_device": args.audio_in,
+                "output_device": args.audio_out,
+            },
+            daemon=True,
+        ).start()
+
+    from .live import run_live
+
+    run_live(
+        seed=seed,
+        strength=strength,
+        backdrop=args.image,
+        camera_index=args.camera_index,
+        width=args.width,
+        window=args.window,
+        max_frames=args.frames,
+    )
+
+
 def cmd_clip(args: argparse.Namespace) -> None:
     from .clips import render
 
@@ -264,6 +311,18 @@ def main() -> None:
     p.add_argument("--night", action="store_true", help="salvage mode for underlit footage")
     p.add_argument("--out")
     p.set_defaults(fn=cmd_enhance)
+
+    p = sub.add_parser("live", help="real-time alter ego -> virtual camera (or preview)")
+    p.add_argument("--image", help="backdrop image or video plate")
+    p.add_argument("--width", type=int, default=640, help="processing width (default 640)")
+    p.add_argument("--camera-index", type=int, default=0)
+    p.add_argument("--window", action="store_true", help="preview window instead of virtual camera")
+    p.add_argument("--voice", action="store_true", help="also shift the microphone live")
+    p.add_argument("--audio-in", help="input device name/index for --voice")
+    p.add_argument("--audio-out", help='output device for --voice (e.g. "CABLE Input")')
+    p.add_argument("--list-audio", action="store_true", help="list audio devices and exit")
+    p.add_argument("--frames", type=int, help=argparse.SUPPRESS)  # for testing
+    p.set_defaults(fn=cmd_live)
 
     p = sub.add_parser("clip", help="render a branded 9:16 social clip (Remotion)")
     p.add_argument("video", help="a polished take (ideally the output of ship)")
