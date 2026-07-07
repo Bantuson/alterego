@@ -22,6 +22,10 @@ dependencies = [
 # Optional because the model download is ~75 MB; install with:
 #   uv sync --extra speech
 speech = ["faster-whisper>=1.0"]
+# Real-time mode: virtual webcam output + live microphone processing.
+# Optional because the virtual camera needs OBS's driver installed.
+#   uv sync --extra live
+live = ["pyvirtualcam>=0.11", "sounddevice>=0.4"]
 
 [project.scripts]
 # This makes `uv run alterego <command>` work from the terminal.
