@@ -52,7 +52,17 @@ machine is the bottleneck; a custom Claude Code brand skill.
 render. Stage order is deliberate: detection sees raw pixels, grading
 glues the composite, whisper hears the natural voice.
 
+## Phase 6 — Live mode ✅ SHIPPED
+
+`alterego live`: real-time disguise + background + tone grade to a
+virtual camera (pyvirtualcam / OBS driver), with `--voice` running a
+two-tap delay-line pitch shifter on the mic. Fail-closed by design:
+lost landmarks pixelate the person; a voice error outputs silence.
+Profiled 4.5 → 20 fps by fixing the glue, not the models (feather at
+quarter res, cv2.blendLinear, threaded camera reads).
+
 ## Beyond v1
 
 - RVC voice conversion (Colab) · GitHub Actions clip rendering ·
-  brand skill · thumbnails · direct platform upload.
+  brand skill · thumbnails · direct platform upload · GPU upgrade
+  path (same code, 1080p30).

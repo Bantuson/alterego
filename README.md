@@ -27,6 +27,32 @@ uv run alterego ship take.mp4 --image street.jpg
 uv run alterego clip take_ship.mp4 --title "Building a CV pipeline on 4GB of RAM"
 ```
 
+## Live mode
+
+The same identity, in real time — face warp, background, color grade,
+and voice shift applied to your webcam and microphone as they happen
+(~20 fps at 640px on a 4 GB machine, measured):
+
+```powershell
+uv sync --extra live
+uv run alterego live --window              # rehearse in a preview window
+uv run alterego live                       # -> virtual camera (install OBS once)
+uv run alterego live --voice --audio-out "CABLE Input"   # + alter-ego mic
+```
+
+Any app that accepts a webcam — OBS, YouTube Live, Zoom, Meet — can
+select the virtual camera, which makes live streaming and even video
+calls pseudonymous.
+
+**Live inverts the safety model.** In post, a frame with no detected
+face passes through and you review it before publishing. Live, that
+frame would leak your real face to the audience, unreviewably. So
+live mode FAILS CLOSED: if landmarks drop, the person region is
+pixelated (segmentation keeps working in conditions where landmark
+detection dies — measured, not assumed) until the face is re-acquired.
+The voice thread has the same rule: on any error it outputs silence,
+never the raw microphone.
+
 Every stage reads a video file and writes a new one. You can re-run any
 stage alone, inspect the output between steps, and nothing is ever held
 in memory except a single frame.
