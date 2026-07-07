@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>alterego — how it was thought into existence</title>
+<style>
+  :root {
+    --bg: #0b0f1d;
+    --panel: #131a2e;
+    --panel2: #182138;
+    --text: #e6e9f2;
+    --muted: #8b93ab;
+    --accent: #39E508;
+    --amber: #ffb347;
+    --red: #ff6b6b;
+    --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: Inter, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.65; font-size: 16.5px;
+  }
+  main { max-width: 780px; margin: 0 auto; padding: 48px 24px 120px; }
+  h1 { font-size: 2.3rem; line-height: 1.15; letter-spacing: -1px; margin: 8px 0 4px; }
+  h1 + p.sub { color: var(--muted); margin-top: 4px; font-size: 1.05rem; }
+  h2 {
+    font-size: 1.5rem; margin: 72px 0 12px; letter-spacing: -0.5px;
+    padding-top: 24px; border-top: 1px solid #232c47;
+  }
+  h3 { font-size: 1.1rem; margin: 36px 0 8px; }
+  p { margin: 12px 0; }
+  .accentbar { width: 90px; height: 7px; border-radius: 4px; background: var(--accent); margin: 18px 0 28px; }
+  .move {
+    background: var(--panel); border-left: 4px solid var(--accent);
+    border-radius: 0 10px 10px 0; padding: 14px 18px; margin: 18px 0;
+  }
+  .move b { color: var(--accent); }
+  .q {
+    font-style: italic; color: var(--amber); margin: 26px 0 6px;
+    font-weight: 600;
+  }
+  .q::before { content: "The question I asked: "; color: var(--muted); font-weight: 400; }
+  .think {
+    background: var(--panel); border-radius: 10px; padding: 14px 18px; margin: 14px 0;
+  }
+  .think::before { content: "💭 the reasoning"; display: block; color: var(--muted);
+    font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .danger { border-left: 4px solid var(--red); }
+  pre {
+    background: #0d1322; border: 1px solid #232c47; border-radius: 10px;
+    padding: 14px 16px; overflow-x: auto; font-family: var(--mono);
+    font-size: 0.82rem; line-height: 1.55; margin: 14px 0;
+  }
+  code { font-family: var(--mono); font-size: 0.88em; background: var(--panel2);
+    padding: 1px 6px; border-radius: 5px; }
+  pre code { background: none; padding: 0; }
+  .commit {
+    display: inline-block; font-family: var(--mono); font-size: 0.78rem;
+    background: #102310; color: var(--accent); border: 1px solid #1d4a1d;
+    border-radius: 999px; padding: 3px 12px; margin: 4px 6px 4px 0;
+  }
+  .test {
+    background: #101b2e; border: 1px dashed #2b3a5c; border-radius: 10px;
+    padding: 12px 16px; margin: 14px 0; font-size: 0.95rem;
+  }
+  .test::before { content: "🧪 the test that pins it down"; display: block; color: var(--muted);
+    font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 0.92rem; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #232c47; }
+  th { color: var(--muted); font-weight: 600; }
+  .num { font-family: var(--mono); }
+  .qa { margin: 20px 0; }
+  .qa .question { font-weight: 700; color: var(--amber); }
+  .qa .answer { margin-top: 4px; }
+  .layer-head { display: flex; align-items: baseline; gap: 12px; }
+  .layer-no {
+    font-family: var(--mono); color: var(--accent); font-size: 0.95rem;
+    white-space: nowrap;
+  }
+  .pipeline {
+    font-family: var(--mono); font-size: 0.8rem; background: #0d1322;
+    border-radius: 10px; padding: 14px 16px; overflow-x: auto; white-space: pre;
+    border: 1px solid #232c47;
+  }
+  a { color: var(--accent); }
+  .toc { background: var(--panel); border-radius: 10px; padding: 16px 22px; margin: 24px 0; }
+  .toc a { display: block; text-decoration: none; padding: 3px 0; color: var(--text); }
+  .toc a:hover { color: var(--accent); }
+  .toc .sec { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: 1px; margin-top: 10px; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>How <span style="color:var(--accent)">alterego</span> was thought into existence</h1>
+<p class="sub">A rebuild guide: the thinking moves, the layers, the tests, and the commits —
+so you can reason about this project as if you had built it yourself. Because after
+working through this, you will have.</p>
+<div class="accentbar"></div>
+
+<div class="toc">
+  <div class="sec">Contents</div>
+  <a href="#moves">0 · The six thinking moves that happen before any code</a>
+  <div class="sec">The build, layer by layer</div>
+  <a href="#l1">1 · A repo that explains itself</a>
+  <a href="#l2">2 · Don't rewrite what already exists (ffmpeg)</a>
+  <a href="#l3">3 · The 4 GB trick: one frame at a time</a>
+  <a href="#l4">4 · Eyes: landmarks and why they jitter</a>
+  <a href="#l5">5 · The core bet: identity is geometry</a>
+  <a href="#l6">6 · Cheap classical wins: grading and cutting</a>
+  <a href="#l7">7 · A CLI shaped like git</a>
+  <a href="#l8">8 · Reality fights back (the fix commits)</a>
+  <a href="#l9">9 · Growing sideways: background, fillers, voice</a>
+  <a href="#l10">10 · Two languages, one JSON contract (Remotion)</a>
+  <a href="#l11">11 · Live mode: the safety model inverts</a>
+  <a href="#l12">12 · Profile first: 4.5 → 20 fps</a>
+  <div class="sec">Doctrine</div>
+  <a href="#testing">The three testing layers</a>
+  <a href="#defense">Defending it: what a senior will ask</a>
+  <a href="#rebuild">Your rebuild plan: ten sessions</a>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="moves">0 · The six thinking moves that happen before any code</h2>
+
+<p>You said your weakness is "thinking in a way that even allows me to start
+writing code." Here is the honest answer: <b>nobody starts by writing code.</b>
+The start is a set of compressions — turning a fuzzy wish into shapes small
+enough to hold in your head. These are the six moves made for alterego, in
+order, before a single line existed. They transfer to any project.</p>
+
+<div class="move"><b>Move 1 — Compress the vision into a pipeline sentence.</b><br>
+The brief was huge: record, look different, sound different, fix lighting,
+edit, brand, post. Compression: <i>"record → disguise → enhance → cut →
+publish."</i> If you cannot draw your project as boxes and arrows in one line,
+you don't understand it yet — keep compressing before you code. Every noun in
+that sentence later became a Python module.</div>
+
+<div class="move"><b>Move 2 — Choose the interface between parts before the parts.</b><br>
+Decision: every stage reads a video file and writes a new video file.
+This one choice quietly solved five future problems: stages can run in any
+order, be re-run alone, be inspected between steps, be tested independently,
+and a crash loses nothing. When stuck on "where do I start", start by asking
+<i>"what do the pieces hand each other?"</i></div>
+
+<div class="move"><b>Move 3 — Let the constraint design for you.</b><br>
+4 GB of RAM is not an obstacle, it is an architect. It dictated: stream one
+frame at a time (never load a video), prefer classical CV over deep nets,
+lean on ffmpeg's C code for everything media-shaped, compute expensive fields
+at quarter resolution. Strong constraints REMOVE decisions — that's a gift.</div>
+
+<div class="move"><b>Move 4 — Build the riskiest thing first.</b><br>
+The face disguise was the make-or-break: if "geometric warp = different-looking
+person" was wrong, the whole project was dead. So it was built and previewed
+on day one, before comforts like a nice CLI. Ask: <i>"which part, if
+impossible, kills the project?"</i> Build exactly that first.</div>
+
+<div class="move"><b>Move 5 — Decide how you'll verify before you build.</b><br>
+There was no test footage and no reviewer. So every claim got a synthetic
+verification designed <i>up front</i>: a 440 Hz tone to prove pitch math by
+FFT, a tone/silence pattern to prove the cutter's arithmetic, text-to-speech
+saying "um" to prove filler removal, a brightness histogram to prove why night
+footage fails. If you can't say how you'd prove a piece works, you don't know
+what "works" means yet — and that ambiguity is what makes starting feel hard.</div>
+
+<div class="move"><b>Move 6 — One idea per commit.</b><br>
+36 commits, each one nameable in a sentence. This is not bureaucracy: it forces
+you to know what you are doing <i>before</i> doing it (you can't name a commit
+you don't understand), and it turns the git log into the project's autobiography —
+which is literally the spine of this document.</div>
+
+<!-- ============================================================ -->
+<h2 id="l1">1 · A repo that explains itself</h2>
+<span class="commit">46752b2 chore: initialize repo with README and gitignore</span>
+<span class="commit">3a38b24 chore: add uv project definition and package skeleton</span>
+
+<p class="q">"What must exist before code so that everything after is easy?"</p>
+
+<div class="think">Three files, each a decision. <b>.gitignore</b> encodes what must
+never be public — recordings of your face — before any recording exists; safety
+rails go up before the cliff. <b>README</b> states the pipeline sentence from Move 1,
+so the repo leads with intent. <b>pyproject.toml</b> declares dependencies with a
+comment per line explaining <i>why</i> each exists, and registers the CLI entry point
+(<code>alterego = "alterego.cli:main"</code>) — naming the interface before it exists.</div>
+
+<pre><code>[project.scripts]
+# This makes `uv run alterego &lt;command&gt;` work from the terminal.
+alterego = "alterego.cli:main"</code></pre>
+
+<!-- ============================================================ -->
+<h2 id="l2">2 · Don't rewrite what already exists (ffmpeg)</h2>
+<span class="commit">46fdc0c feat: ffmpeg helpers and terminal recorder</span>
+
+<p class="q">"Which parts of this problem are already solved by professionals?"</p>
+
+<div class="think">Reading/writing compressed video+audio is a decades-deep
+problem. The professional move is to keep Python for the <i>interesting</i> part
+(per-frame vision) and delegate encoding, devices, containers, and cutting to
+ffmpeg subprocesses. This layer is two ideas: <b>find ffmpeg robustly</b>
+(PATH → winget's link folder → the pip-bundled fallback — ordered by capability)
+and <b>run it safely</b>. One non-obvious craft detail: ffmpeg prints analysis
+output to <i>stderr</i>, and some commands "fail" by design (listing devices exits
+non-zero) — so there is a <code>probe_stderr()</code> helper that deliberately
+ignores exit codes. Reading a tool's quirks IS the work.</div>
+
+<pre><code>def _stop_ffmpeg(proc):
+    # Sending "q" to ffmpeg's stdin is the clean way to stop: it
+    # finishes writing the file header so the video stays playable.
+    # Killing the process instead can corrupt the recording.
+    proc.stdin.write(b"q")</code></pre>
+
+<!-- ============================================================ -->
+<h2 id="l3">3 · The 4 GB trick: one frame at a time</h2>
+<span class="commit">c3f3758 feat: streaming video processor and landmark wrapper</span>
+
+<p class="q">"What is the one loop every video stage shares?"</p>
+
+<div class="think">Do the RAM math out loud: one 720p frame ≈ 2.6 MB as a numpy
+array; a 5-minute video ≈ 24,000 frames ≈ 60 GB if loaded whole. Read-one,
+process-one, write-one needs ~3 MB. That math <i>is</i> the design. Then notice:
+disguise and enhance differ only in the function applied per frame — so the loop
+is written once, taking a <code>frame_fn</code> parameter. This is the single most
+reusable abstraction in the codebase, and it fell out of asking "what do these
+two future modules have in common?"</div>
+
+<pre><code># A frame function takes a BGR image and returns a new one.
+FrameFn = Callable[[np.ndarray], np.ndarray]
+
+def stream_video(src, dst, frame_fn: FrameFn) -> None:
+    while True:
+        ok, frame = capture.read()
+        if not ok: break
+        writer.write(frame_fn(frame))   # the ONLY line that varies
+    remux_audio(temp, src, dst)         # OpenCV drops audio; ffmpeg puts it back</code></pre>
+
+<!-- ============================================================ -->
+<h2 id="l4">4 · Eyes: landmarks and why they jitter</h2>
+
+<p class="q">"How does code know where a jaw is?"</p>
+
+<div class="think">MediaPipe Face Mesh returns 468 numbered points, and index
+152 is <i>always</i> the chin — anatomical addressing. That stability is the
+foundation the disguise stands on. But detection jitters a pixel or two per
+frame, and warping with raw landmarks makes the whole face shimmer. Fix: an
+exponential moving average — keep α of the new position, 1−α of the running
+average. Two design details worth defending: the smoother <b>resets on lost
+faces</b> (blending positions across a gap would smear stale geometry onto the
+returning face), and it lives in its own class because smoothing-over-time is
+a separate concern from detecting-in-a-frame.</div>
+
+<pre><code>class LandmarkSmoother:
+    def update(self, landmarks):
+        if landmarks is None:
+            self._state = None          # face lost: never blend stale positions
+            return None
+        self._state = (self.alpha * landmarks
+                       + (1 - self.alpha) * self._state)
+        return self._state</code></pre>
+
+<!-- ============================================================ -->
+<h2 id="l5">5 · The core bet: identity is geometry</h2>
+<span class="commit">99258b6 feat: seeded geometric face disguise via Gaussian displacement fields</span>
+
+<p class="q">"What makes a face recognizable — and what is the smallest change that breaks it?"</p>
+
+<div class="think">The domain insight: recognition (human and machine) keys on
+<i>ratios</i> — jaw width to face width, eye spacing, nose length. Shift each by
+a few percent, consistently, and the face reads as a different person while
+staying perfectly natural. That translates to three sub-problems, solved in order:
+<br><br>
+<b>(a) A reproducible identity.</b> Eight numbers drawn from a seeded RNG. Same
+seed → same face, forever. The seed IS the alter ego — which later forced two
+more decisions (persist it to a file; gitignore that file like a password).
+<br><br>
+<b>(b) Semantic shifts.</b> A table maps profile knobs to landmark motions:
+"jaw wider" = push jaw points away from the face's center line, scaled by
+measured face width so leaning into the camera doesn't break it.
+<br><br>
+<b>(c) A smooth warp.</b> Each control point drags nearby pixels with Gaussian
+falloff (think Photoshop's Liquify). Summing per-pixel for 720p is too slow —
+so the field is computed at quarter resolution and upscaled, which is visually
+lossless <i>because smooth fields stay smooth when upscaled</i>. That trick
+(compute small, upscale) recurs three more times in this codebase.</div>
+
+<pre><code># remap() is a BACKWARD warp: each output pixel asks "which input
+# pixel do I show?". To push a feature +d we sample from -d,
+# hence the minus sign on the shifts.
+field_x, field_y = displacement_field(shape, points, -shifts, sigma)</code></pre>
+
+<div class="test">Same seed twice → identical profile (the privacy promise as an
+assert). Zero strength → zero shifts. Max shift ≤ 6% of face width ("naturally
+different" quantified). The field peaks at a control point and dies far away.
+All pure math — no camera, no model, millisecond-fast.</div>
+
+<!-- ============================================================ -->
+<h2 id="l6">6 · Cheap classical wins: grading and cutting</h2>
+<span class="commit">8e9f27c feat: lighting/color enhancement and silence-cutting stages</span>
+
+<p class="q">"Which named, googleable techniques fix 80% of amateur footage?"</p>
+
+<div class="think">Deliberately boring, deliberately classical — each step is a
+technique with a name you can look up: <b>gray-world white balance</b> (if the
+channels' averages disagree, the light is tinted, not the scene), <b>CLAHE</b>
+(local contrast: lifts shadows without washing highlights), gentle saturation.
+Order matters and is worth defending: balance color first so CLAHE works on true
+tones; saturate last to restore what correction flattened.
+<br><br>
+The cutter is a different lesson: <b>most media programming is interval
+arithmetic</b>. ffmpeg's silencedetect prints silence timestamps; the real work
+is inverting "silence ranges" into "keep ranges" with padding — pure list
+logic. The padding (0.15 s of breath kept at every cut) is the difference
+between an edit that feels human and one that feels robotic. Pacing is padding.</div>
+
+<pre><code>def keep_segments(silences, duration, padding=0.15):
+    kept, cursor = [], 0.0
+    for silence_start, silence_end in silences:
+        keep_end = min(silence_start + padding, duration)
+        if keep_end - cursor > 0.05:
+            kept.append((cursor, keep_end))
+        cursor = max(silence_end - padding, cursor)
+    ...</code></pre>
+
+<div class="test">No silences → keep everything. One middle silence → two
+segments. Silence at the start/end → dropped. Kept time never exceeds duration;
+segments never overlap. Notice: these tests describe the function's <i>contract
+in English</i> first — write those sentences, then translate to asserts.</div>
+
+<!-- ============================================================ -->
+<h2 id="l7">7 · A CLI shaped like git</h2>
+<span class="commit">b68eb36 feat: argparse CLI with live disguise preview mode</span>
+<span class="commit">ada450a test: cover disguise math and silence-cut interval logic</span>
+
+<p class="q">"What's the smallest interface that makes every module usable?"</p>
+
+<div class="think">One subcommand per pipeline stage — the same pattern as git,
+uv, and docker, built with stdlib argparse (zero dependencies, transferable
+knowledge). Two touches matter: modules are imported <i>inside</i> command
+functions so <code>alterego --help</code> doesn't pay MediaPipe's import cost,
+and outputs default to traceable names (<code>take.mp4 → take_alterego.mp4</code>)
+so a folder listing tells the story of what was done. The preview command
+(press N for a new random face, K to keep it) exists because <b>a feedback loop
+beats a spec</b> — you choose your alter ego by seeing it, not by imagining it.</div>
+
+<!-- ============================================================ -->
+<h2 id="l8">8 · Reality fights back (the fix commits)</h2>
+<span class="commit">33cac35 fix: migrate to MediaPipe tasks API</span>
+<span class="commit">a7c9b86 fix: record at camera-native mode; fail fast</span>
+<span class="commit">acf7398 feat: persist chosen alter-ego seed</span>
+
+<p class="q">"What did running it teach that reading it couldn't?"</p>
+
+<div class="think">Three collisions with reality, three lessons:
+<br><br>
+<b>The API that vanished.</b> The code was written against MediaPipe's classic
+<code>mp.solutions</code> API; version 0.10.35 had deleted it. Diagnosis method:
+<code>print(dir(mp))</code> — ask the library what it actually has, never argue
+with it. The rewrite (tasks API) also surfaced a hidden requirement: the model
+file ships separately, so add a download-once-and-cache step.
+<br><br>
+<b>The camera that said no.</b> Recording failed with "Could not set video
+options" — the code demanded 1280×720@30 and the hardware's menu only goes to
+640×480. Lesson burned in: <i>never force hardware parameters; ask the device
+what it supports</i> (<code>devices --modes</code>), default to native. The fix
+also added a fail-fast: poll capture processes 2 s after start, because a doomed
+recording should die loudly now, not silently after a 20-minute take.
+<br><br>
+<b>The seed that lived in scrollback.</b> The user pressed N twice in preview and
+asked "did that persist anywhere?" It hadn't — the identity existed only in
+terminal history. When a value IS the product (the seed is the alter ego), it
+gets a file, and that file gets gitignored like a credential.</div>
+
+<!-- ============================================================ -->
+<h2 id="l9">9 · Growing sideways: background, fillers, voice</h2>
+<span class="commit">846940d feat: background stage</span>
+<span class="commit">0b2dabc feat: disguise reports face coverage</span>
+<span class="commit">d7d0652 feat: cut merges filler ranges with silences</span>
+<span class="commit">e5803f0 feat: seeded voice pitch shift</span>
+<span class="commit">f2d3f40 feat: ship command</span>
+
+<p class="q">"Now that the spine works, what does each new limb reuse?"</p>
+
+<div class="think">Every extension deliberately rides existing rails — that's
+what a good foundation buys:
+<br><br>
+<b>Background replacement</b> = a person-mask model + the same
+<code>stream_video</code> loop + one new pure function (<code>composite</code>).
+The realism rules are craft knowledge worth stating: blur the fake backdrop
+(sharp = green-screen; blurred = "portrait mode"), and grade <i>after</i>
+compositing so subject and scene share one color treatment.
+<br><br>
+<b>The coverage warning</b> came from a measurement that changed the project's
+soul: on a dark take, faces were detectable on <b>2% of frames</b> — meaning the
+"disguised" output was 98% the user's real face, silently. Silent privacy
+failure is the worst failure. Now disguise counts coverage and shouts below 90%.
+<br><br>
+<b>Filler removal</b> is the reuse masterclass: the cutter already removes time
+ranges; fillers are just <i>more ranges</i>, sourced from whisper word timestamps.
+One trap: the cutter keeps 0.15 s of padding around every cut (good for pauses),
+which would let a 0.3 s "um" escape whole — so filler ranges are pre-expanded by
+exactly that padding. When two features share a mechanism, check where their
+needs <i>differ</i>.
+<br><br>
+<b>Voice</b> mirrors the face philosophically: factor derived from the same seed
+(consistent forever), but salted so voice and face are independent draws, and the
+sampling <i>designs out</i> the do-nothing zone around 1.0.
+<b>Ship</b> then chains everything, ordered by reasons, not habit: disguise first
+(detection wants raw pixels), grade after background (glue), cut before voice
+(whisper should hear the natural voice).</div>
+
+<div class="test">The physics test for voice: synthesize 440 Hz, shift ×1.10,
+FFT the output → measured 485 Hz (ratio 1.1023). When your code claims to change
+a physical quantity, measure the quantity.</div>
+
+<!-- ============================================================ -->
+<h2 id="l10">10 · Two languages, one JSON contract (Remotion)</h2>
+<span class="commit">8eb98f8 feat: clip command bridges Python data to Remotion design</span>
+<span class="commit">20e15b7 feat: Remotion project - branded 9:16 clip composition</span>
+
+<p class="q">"Where exactly is the boundary between Python's job and React's job?"</p>
+
+<div class="think">Rule: <b>Python makes data decisions</b> (transcribe, measure
+duration, stage assets), <b>React makes design decisions</b> (layout, fonts,
+animation) — and they meet at a props JSON. That contract means restyling never
+touches Python and better transcription never touches React. Two production
+scars from this layer: the render staging folder (<code>remotion/public/</code>)
+nearly got committed with footage in it — gitignored immediately, because a
+pipeline that copies personal video around must treat every such folder as
+radioactive. And renders run <code>--concurrency=1</code>: one browser tab is
+kind to 4 GB; slow beats dead.</div>
+
+<pre><code># Whisper gives seconds; Remotion wants milliseconds. Keep the RAW
+# token (" Hello") — caption layout is whitespace-sensitive.
+{"text": " Hello", "startMs": 1500, "endMs": 2250, ...}</code></pre>
+
+<!-- ============================================================ -->
+<h2 id="l11">11 · Live mode: the safety model inverts</h2>
+<span class="commit">5ff286f feat: real-time pitch shifter (two-tap delay line, fail-closed)</span>
+<span class="commit">b58cc05 feat: live vision pipeline - cached warps, Nth-frame masks, fail-closed</span>
+
+<p class="q">"What changes when there is no 'post' — when the frame ships the instant it exists?"</p>
+
+<div class="think danger">In post, a frame with no detected face passes through
+untouched, and you review before publishing. Live, that same behavior would leak
+your REAL face to an audience, unreviewably. The 2%-coverage measurement from
+layer 9 is what makes this concrete rather than theoretical. So live mode
+<b>fails closed</b>: landmarks lost → the person region gets pixelated (we
+<i>measured</i> that segmentation survives darkness that kills landmark
+detection — the fallback is built on evidence, not hope). Pixelation over blur
+is a UX decision: it reads as deliberate censorship, not a broken camera. The
+voice thread obeys the same law: any error in the shifter outputs silence, never
+the raw microphone. <b>When output is irreversible, every failure path must be
+designed, not defaulted.</b></div>
+
+<div class="think">Real-time also changes the algorithms. File-based pitch
+shifting hands ffmpeg a whole file; live audio arrives in 23 ms blocks. The
+solution is the two-tap delay-line shifter (the guitar "Whammy pedal" trick):
+a ring buffer, two read heads moving at a different speed than the writer,
+crossfaded so each head's jump lands at zero gain. And the vision loop exploits
+time-coherence: bodies barely move in 100 ms (segment every 3rd frame), faces
+barely move between frames (rebuild warp maps only when landmarks moved &gt; 1.5 px
+— below that it's detection jitter, and the cached warp is <i>more</i> stable).</div>
+
+<div class="test">The pipeline takes its models as constructor arguments, so
+tests inject fakes that return scripted landmarks — including <code>None</code>
+sequences that prove the fail-closed path fires and the output frame is
+measurably scrambled. The shifter is verified by the same FFT method as layer 9,
+fed through live-sized blocks.</div>
+
+<!-- ============================================================ -->
+<h2 id="l12">12 · Profile first: 4.5 → 20 fps</h2>
+<span class="commit">0512e2c perf: 4.5 -&gt; 20 fps live - profile first, then fix the glue</span>
+
+<p class="q">"Where do the milliseconds actually go?" (asked, not guessed)</p>
+
+<div class="think">First live run: 4.5 fps. The intuition says "the neural
+networks are slow." The profiler says otherwise:</div>
+
+<table>
+<tr><th>Stage</th><th>Before</th><th>After</th><th>Fix</th></tr>
+<tr><td>Landmark detection</td><td class="num">9.9 ms</td><td class="num">9.9 ms</td><td>already fine</td></tr>
+<tr><td>Segmentation</td><td class="num">28.4 ms</td><td class="num">÷3 amortized</td><td>every 3rd frame</td></tr>
+<tr><td><b>Feathering the mask</b></td><td class="num"><b>141.8 ms</b></td><td class="num">9.9 ms</td><td>blur at ¼ res, upscale</td></tr>
+<tr><td>Fallback composite</td><td class="num">~55 ms</td><td class="num">16.7 ms</td><td>cv2.blendLinear (C++)</td></tr>
+<tr><td>Camera read</td><td class="num">33.7 ms <i>blocking</i></td><td class="num">~0</td><td>reader thread</td></tr>
+</table>
+
+<div class="think">The villain was a <i>Gaussian blur</i> — glue code — costing
+14× the AI model it post-processed. Three morals: <b>(1)</b> never optimize
+without measuring; <b>(2)</b> the "compute small, upscale smooth things"
+trick from layer 5 strikes again; <b>(3)</b> in live systems, a blocking read
+is a tax on every frame — move it to a thread where dropping stale frames is
+not a bug but the definition of "live." A bonus bug hid in the benchmark
+itself: the fps clock originally stopped <i>after</i> model teardown, reporting
+a 20 fps session as 4.6. Even your measurements need code review.</div>
+
+<!-- ============================================================ -->
+<h2 id="testing">The three testing layers</h2>
+
+<p>alterego has 45 tests and none of them need a camera, a GPU, or your face.
+That is not an accident — it's a doctrine with three layers:</p>
+
+<h3>Layer 1 — Pure logic, synthetic inputs</h3>
+<p>Separate the <i>decision</i> from the <i>I/O</i>, then test decisions with
+made-up arrays: fake landmarks in a box, masks of ones and zeros, silence lists
+like <code>[(4.0, 6.0)]</code>. This is why functions like
+<code>keep_segments</code>, <code>control_shifts</code>, and
+<code>filler_ranges</code> take plain data instead of reading files — testability
+is an <i>input</i> to the design, not an afterthought.</p>
+
+<h3>Layer 2 — Physics checks</h3>
+<p>When code claims to change a measurable quantity, measure it: pitch shift
+×1.10 → FFT peak moves 440 → 485 Hz. Displacement field → full shift at the
+control point, zero far away. Night mode → mean brightness 18.8 → 56. The test
+doesn't trust the code's story; it measures the world the code changed.</p>
+
+<h3>Layer 3 — End-to-end with synthesized media</h3>
+<p>No real footage needed: ffmpeg's <code>testsrc2</code> generates video, a math
+expression generates tone/silence audio with known timings, and Windows TTS
+literally <i>speaks</i> "um" so filler removal can be proven to cut exactly 3
+fillers. Fabricating inputs with known answers is a superpower — you always know
+what the output <i>should</i> be.</p>
+
+<p><b>Why never test with your own face?</b> Privacy (test artifacts get
+committed, shared, pasted into issues) and reproducibility (your face can't be
+regenerated from a seed on someone else's machine; <code>testsrc2</code> can).</p>
+
+<!-- ============================================================ -->
+<h2 id="defense">Defending it: what a senior will ask</h2>
+
+<div class="qa"><div class="question">Q: Why geometric warping instead of a deep-learning face swap?</div>
+<div class="answer">Three reasons, in order: it runs on a 4 GB CPU machine (deepfakes
+don't); pixels only <i>move</i> and are never invented, so lip-sync, skin texture,
+and expressions survive perfectly; and it's fully deterministic from a seed, which
+is what makes the identity reproducible across every video. The trade-off accepted:
+it raises the cost of recognition rather than providing cryptographic anonymity —
+stated honestly in the README.</div></div>
+
+<div class="qa"><div class="question">Q: Why files between stages instead of one in-memory pipeline?</div>
+<div class="answer">Inspectability (watch the output of any stage), resumability
+(a crash in stage 4 keeps stages 1–3), independent re-runs, trivially testable
+stages, and constant memory. The cost — re-encoding between stages — is paid in
+disk and CPU time, which this project has, instead of RAM, which it doesn't.
+Live mode is the exception that proves the rule: there the deadline dominates,
+so it uses one in-memory loop with caching.</div></div>
+
+<div class="qa"><div class="question">Q: Why is the seed treated like a password?</div>
+<div class="answer">The profile is derived from it deterministically; anyone with
+the seed can reproduce the exact warp — or approximately invert it. It also IS the
+brand: a different seed is a different face on camera. Hence: stored in a file
+(terminal scrollback is not storage), gitignored, never in commit history.</div></div>
+
+<div class="qa"><div class="question">Q: Your displacement field just sums Gaussians. Why not thin-plate splines or piecewise-affine triangulation?</div>
+<div class="answer">Considered and rejected for v1: TPS needs opencv-contrib and is
+harder to reason about; triangulation is the classic approach but ~3× the code and
+its artifacts (visible triangle seams) are worse than Gaussian falloff's (slight
+neighborhood drag) at these tiny shift magnitudes (≤6% of face width). The
+Gaussian field is 40 lines, vectorized, and computed at ¼ resolution for speed.
+At larger deformations the answer would change.</div></div>
+
+<div class="qa"><div class="question">Q: How do you know the disguise actually protects anything?</div>
+<div class="answer">Claim is scoped honestly: it shifts the geometric ratios that
+recognition keys on, consistently. What's <i>measured</i>: same seed → identical
+profile (tested), shifts ≤6% face width (tested), coverage reported per run
+(the 2% night-footage incident is why). What's NOT claimed: robustness against
+determined forensic analysis — voice content and context identify you more than
+biometrics, which is why voice shifting exists and why the README says "raises
+the cost, not cryptographic anonymity."</div></div>
+
+<div class="qa"><div class="question">Q: Why does live mode pixelate instead of just skipping frames when the face is lost?</div>
+<div class="answer">Skipping (freezing) looks like a broken stream and still shows
+the last real-ish frame; passthrough leaks the real face. Pixelation is fail-closed
+(nothing identifiable leaves), cheap (downscale + nearest-neighbor upscale), and
+reads as deliberate to viewers. The person region comes from segmentation, which
+we measured to survive lighting that kills landmark detection — the fallback is
+built on the failure mode's actual shape.</div></div>
+
+<div class="qa"><div class="question">Q: Whisper tiny is a weak model. Why is it enough here?</div>
+<div class="answer">Task-model fit: filler detection only needs the acoustically
+distinct easy words ("um", "uh") plus timestamps; caption text quality is nice-to-have,
+not correctness-critical. tiny+int8 fits in &lt;1 GB RAM, which is the binding
+constraint. Verified end-to-end: it caught 3/3 scripted fillers in synthesized TTS
+speech — a harder acoustic target than natural fillers.</div></div>
+
+<div class="qa"><div class="question">Q: What's the scaling story?</div>
+<div class="answer">Vertical: the same code hits 1080p30 on any machine with a real
+GPU — nothing is architecture-bound to 480p, the resolutions are parameters.
+Horizontal: heavy offline jobs (Remotion renders, future RVC voice conversion)
+are designed to move to free-tier cloud (GitHub Actions' 2,000 min/month, Colab)
+because every stage is a file-in/file-out CLI command — trivially portable.</div></div>
+
+<div class="qa"><div class="question">Q: Where are the known weaknesses?</div>
+<div class="answer">Being able to answer this is what makes the rest credible:
+(1) the warp is axis-aligned relative to the face — strong head rotation reduces
+disguise strength; (2) the delay-line pitch shifter adds a faint shimmer at large
+factors; (3) background edges show halo under hair in high contrast; (4) live mode
+depends on OBS's driver for the virtual camera; (5) the voice shift changes pitch,
+not vocal-tract character — RVC-grade conversion is roadmapped for Colab.</div></div>
+
+<!-- ============================================================ -->
+<h2 id="rebuild">Your rebuild plan: ten sessions</h2>
+
+<p>Reading this document is layer 0. The goal — reasoning about it like you
+built it — needs your hands. Each session: <b>rebuild from the question, not
+from memory of the code.</b> Write your attempt, then diff against the real
+module and study every difference like a code review.</p>
+
+<table>
+<tr><th>Session</th><th>Build from scratch</th><th>You've got it when…</th></tr>
+<tr><td class="num">1</td><td>Repo + pyproject + a hello-world CLI entry point with argparse subcommands</td><td><code>uv run yourtool --help</code> shows two commands</td></tr>
+<tr><td class="num">2</td><td><code>find_ffmpeg()</code> + <code>get_duration()</code> by parsing stderr</td><td>correct duration for a testsrc2 clip you generated</td></tr>
+<tr><td class="num">3</td><td><code>stream_video()</code> with a frame_fn that inverts colors</td><td>output plays, audio intact (remux!), RAM flat while it runs</td></tr>
+<tr><td class="num">4</td><td>Landmark wrapper + draw dots on your face in a preview window</td><td>dots stick to your chin at index 152 while you move</td></tr>
+<tr><td class="num">5</td><td>Seeded profile + control_shifts (no warp yet) — print the shift table</td><td>same seed → same table, twice</td></tr>
+<tr><td class="num">6</td><td>Displacement field + remap. Warp a still photo of a face</td><td>jaw visibly narrower; no visible seams</td></tr>
+<tr><td class="num">7</td><td>keep_segments + merge_ranges from their test files ONLY (TDD backwards)</td><td>the real tests pass against your implementation</td></tr>
+<tr><td class="num">8</td><td>Silence cutter end-to-end on a tone/silence clip you synthesize</td><td>output duration matches your hand-calculated answer</td></tr>
+<tr><td class="num">9</td><td>The pitch shifter, from the "two read heads" description alone</td><td>FFT of your output: 440 → ~484 Hz at factor 1.1</td></tr>
+<tr><td class="num">10</td><td>A fail-closed live loop: webcam → detect → warp-or-pixelate → window</td><td>cover the camera: pixelation within 4 frames, every time</td></tr>
+</table>
+
+<p>Then the final exam: <b>explain layer 12's profiling table to someone else</b>
+without looking, including <i>why</i> blurring at quarter resolution is lossless
+for masks. Teaching it is the proof you own it.</p>
+
+<p style="margin-top:48px; color:var(--muted); font-size:0.9rem;">
+alterego · <a href="https://github.com/Bantuson/alterego">github.com/Bantuson/alterego</a> ·
+36 commits, 45 tests, one weekend plus momentum. Built in Tembisa on 4 GB of RAM —
+the constraint was the architect.</p>
+
+</main>
+</body>
+</html>
