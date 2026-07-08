@@ -90,7 +90,9 @@ def cmd_preview(args: argparse.Namespace) -> None:
             profile = DisguiseProfile.from_seed(seed, args.strength)
             print(f"seed={seed}")
         if key == ord("k"):
-            path = save_identity(seed, args.strength)
+            # The knobs are the identity; the seed doubles as the
+            # voice seed so face and voice stay a matched pair.
+            path = save_identity(profile, args.strength, voice_seed=seed)
             print(f"✓ kept seed={seed} -> {path} (disguise now uses it by default)")
 
     capture.release()
@@ -98,23 +100,119 @@ def cmd_preview(args: argparse.Namespace) -> None:
     landmarker.close()
 
 
+KNOB_FLAGS = {
+    "jaw": "jaw_width",
+    "chin": "chin_length",
+    "eyes_apart": "eye_spacing",
+    "nose_length": "nose_length",
+    "nose_width": "nose_width",
+    "mouth": "mouth_width",
+    "lips": "lip_fullness",
+    "brows": "brow_height",
+}
+
+
+def cmd_design(args: argparse.Namespace) -> None:
+    """Craft the alter ego deliberately: explicit knobs or a reference face."""
+    import numpy as np
+
+    from .disguise import DisguiseProfile
+    from .settings import load_identity, save_identity
+
+    existing = load_identity()
+
+    if args.like:
+        from .design import (
+            knobs_from_reference,
+            landmarks_from_camera,
+            landmarks_from_image,
+            measure_ratios,
+        )
+
+        print("  measuring your face (look at the camera, neutral expression)...")
+        mine = measure_ratios(landmarks_from_camera(args.camera_index))
+        target = measure_ratios(landmarks_from_image(args.like))
+        profile = knobs_from_reference(mine, target)
+        print("  knobs derived from reference (clamped to the naturalness budget):")
+    else:
+        # Start from the saved face (tweak) or a blank one (fresh),
+        # then apply whichever knobs were passed.
+        base = existing.profile.to_dict() if (existing and args.tweak) else {
+            name: 0.0 for name in KNOB_FLAGS.values()
+        }
+        for flag, knob in KNOB_FLAGS.items():
+            value = getattr(args, flag)
+            if value is not None:
+                base[knob] = float(np.clip(value, -1.0, 1.0))
+        profile = DisguiseProfile.from_dict(base)
+
+    for knob, value in profile.to_dict().items():
+        print(f"    {knob:12s} {value:+.2f}")
+
+    # Voice stays whatever it was: redesigning your face must never
+    # silently change how you sound. Fresh identities roll one.
+    voice_seed = existing.voice_seed if existing else int(
+        np.random.default_rng().integers(0, 100_000)
+    )
+
+    if not args.save:
+        # Audition before committing — the preview is the final judge.
+        import cv2
+
+        from .disguise import apply_disguise
+        from .faces import FaceLandmarker, LandmarkSmoother
+
+        capture = cv2.VideoCapture(args.camera_index)
+        if not capture.isOpened():
+            raise SystemExit(f"No webcam at index {args.camera_index}.")
+        landmarker = FaceLandmarker()
+        smoother = LandmarkSmoother()
+        print("previewing — K = keep this face, Q = quit without saving")
+        kept = False
+        while True:
+            ok, frame = capture.read()
+            if not ok:
+                break
+            frame = cv2.resize(frame, None, fx=0.5, fy=0.5)
+            landmarks = smoother.update(landmarker.detect(frame))
+            if landmarks is not None:
+                frame = apply_disguise(frame, landmarks, profile)
+            cv2.imshow("alterego design", frame)
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord("q"):
+                break
+            if key == ord("k"):
+                kept = True
+                break
+        capture.release()
+        cv2.destroyAllWindows()
+        landmarker.close()
+        if not kept:
+            print("not saved.")
+            return
+
+    path = save_identity(profile, strength=1.0, voice_seed=voice_seed)
+    print(f"✓ identity saved -> {path}")
+
+
 def cmd_disguise(args: argparse.Namespace) -> None:
-    from .disguise import process_video
+    from .disguise import DisguiseProfile, process_video
     from .settings import load_identity
 
-    seed, strength = args.seed, args.strength
-    if seed is None:
-        saved = load_identity()
-        if saved is None:
+    if args.seed is not None:
+        profile = DisguiseProfile.from_seed(args.seed, args.strength)
+    else:
+        identity = load_identity()
+        if identity is None:
             raise SystemExit(
-                "No seed given and no saved identity. Run `alterego preview` "
-                "and press K on a face you like, or pass --seed."
+                "No saved identity. Run `alterego preview` (press K) or "
+                "`alterego design`, or pass --seed."
             )
-        seed, strength = saved
-        print(f"using saved identity: seed={seed} strength={strength}")
+        profile = identity.profile
+        print("using saved identity")
 
     out = args.out or _default_out(args.video, "alterego")
-    process_video(args.video, out, seed=seed, strength=strength)
+    process_video(args.video, out, profile)
 
 
 def cmd_prep(args: argparse.Namespace) -> None:
@@ -148,9 +246,8 @@ def cmd_live(args: argparse.Namespace) -> None:
     identity = load_identity()
     if identity is None:
         raise SystemExit(
-            "live needs your saved identity. Run `alterego preview`, press K."
+            "live needs your saved identity. Run `alterego preview` (K) or `alterego design`."
         )
-    seed, strength = identity
 
     if args.list_audio:
         from .live_voice import list_audio_devices
@@ -169,7 +266,7 @@ def cmd_live(args: argparse.Namespace) -> None:
         threading.Thread(
             target=run_voice_loop,
             kwargs={
-                "factor": factor_from_seed(seed),
+                "factor": factor_from_seed(identity.voice_seed),
                 "input_device": args.audio_in,
                 "output_device": args.audio_out,
             },
@@ -179,8 +276,7 @@ def cmd_live(args: argparse.Namespace) -> None:
     from .live import run_live
 
     run_live(
-        seed=seed,
-        strength=strength,
+        profile=identity.profile,
         backdrop=args.image,
         camera_index=args.camera_index,
         width=args.width,
@@ -217,13 +313,13 @@ def cmd_voice(args: argparse.Namespace) -> None:
 
     factor = args.factor
     if factor is None:
-        saved = load_identity()
-        if saved is None:
+        identity = load_identity()
+        if identity is None:
             raise SystemExit(
                 "No --factor given and no saved identity to derive one from. "
                 "Run `alterego preview` and press K, or pass --factor 1.05."
             )
-        factor = factor_from_seed(saved[0])
+        factor = factor_from_seed(identity.voice_seed)
 
     out = args.out or _default_out(args.video, "voiced")
     process_video(args.video, out, factor)
@@ -281,6 +377,18 @@ def main() -> None:
     p.add_argument("--strength", type=float, default=1.0)
     p.add_argument("--camera-index", type=int, default=0)
     p.set_defaults(fn=cmd_preview)
+
+    p = sub.add_parser("design", help="craft your alter ego: knobs or a reference face")
+    for flag, knob in KNOB_FLAGS.items():
+        p.add_argument(
+            f"--{flag.replace('_', '-')}", dest=flag, type=float, metavar="-1..1",
+            help=f"set {knob}",
+        )
+    p.add_argument("--like", metavar="PHOTO", help="match a reference face's proportions")
+    p.add_argument("--tweak", action="store_true", help="start from the saved identity")
+    p.add_argument("--save", action="store_true", help="save without previewing")
+    p.add_argument("--camera-index", type=int, default=0)
+    p.set_defaults(fn=cmd_design)
 
     p = sub.add_parser("disguise", help="apply your alter ego to a recording")
     p.add_argument("video")

@@ -156,15 +156,14 @@ class LivePipeline:
 
     def __init__(
         self,
-        seed: int,
-        strength: float = 1.0,
+        profile: DisguiseProfile,
         backdrop: str | None = None,
         seg_every: int = 3,
         grace_frames: int = 3,
         landmarker=None,
         segmenter=None,
     ) -> None:
-        self.disguise = CachedDisguise(DisguiseProfile.from_seed(seed, strength))
+        self.disguise = CachedDisguise(profile)
         self.landmarker = landmarker or FaceLandmarker()
         self.segmenter = segmenter or PersonSegmenter()
         self.smoother = LandmarkSmoother()
@@ -215,8 +214,7 @@ class LivePipeline:
 
 
 def run_live(
-    seed: int,
-    strength: float = 1.0,
+    profile: DisguiseProfile,
     backdrop: str | None = None,
     camera_index: int = 0,
     width: int = 640,
@@ -239,7 +237,7 @@ def run_live(
     scale = width / first.shape[1]
     height = int(first.shape[0] * scale)
 
-    pipeline = LivePipeline(seed, strength, backdrop)
+    pipeline = LivePipeline(profile, backdrop)
 
     virtual_cam = None
     if not window:

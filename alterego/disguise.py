@@ -72,10 +72,22 @@ class DisguiseProfile:
         Same seed -> same random draws -> same face changes in every
         video you ever publish. Your alter ego needs to be consistent
         or viewers will notice. Keep your seed secret like a password.
+
+        A seed is just one way to CHOOSE the eight knobs — design.py
+        offers two more (explicit knobs, or matching a reference
+        face). Whatever chose them, the knobs are the identity.
         """
         rng = np.random.default_rng(seed)
         values = rng.uniform(-1.0, 1.0, size=len(fields(cls))) * strength
         return cls(*values)
+
+    def to_dict(self) -> dict[str, float]:
+        """The eight knobs as a plain dict — for saving to disk."""
+        return {f.name: round(getattr(self, f.name), 4) for f in fields(self)}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, float]) -> "DisguiseProfile":
+        return cls(**{f.name: float(data[f.name]) for f in fields(cls)})
 
 
 def control_shifts(landmarks: np.ndarray, profile: DisguiseProfile) -> tuple[np.ndarray, np.ndarray]:
@@ -214,13 +226,12 @@ def apply_disguise(frame: np.ndarray, landmarks: np.ndarray, profile: DisguisePr
     )
 
 
-def process_video(src: str | Path, dst: str | Path, seed: int, strength: float = 1.0) -> None:
+def process_video(src: str | Path, dst: str | Path, profile: DisguiseProfile) -> None:
     """Run the disguise over a whole recording, preserving audio.
 
     Frames where no face is detected pass through untouched — that is
     the safe default for screen-share segments or empty-chair moments.
     """
-    profile = DisguiseProfile.from_seed(seed, strength)
     landmarker = FaceLandmarker()
     smoother = LandmarkSmoother()
     counts = {"total": 0, "disguised": 0}

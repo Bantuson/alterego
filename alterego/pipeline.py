@@ -42,10 +42,9 @@ def ship(
     identity = load_identity()
     if identity is None:
         raise SystemExit(
-            "ship needs your saved identity (seed). Run `alterego preview` "
-            "and press K on the face you want."
+            "ship needs your saved identity. Run `alterego preview` "
+            "and press K, or `alterego design` to craft one."
         )
-    seed, strength = identity
 
     # Build the stage list up front so we can show honest progress.
     stages: list[str] = ["disguise"]
@@ -74,7 +73,7 @@ def ship(
             if stage == "disguise":
                 from .disguise import process_video
 
-                process_video(current, target, seed=seed, strength=strength)
+                process_video(current, target, identity.profile)
             elif stage == "background":
                 from .background import process_video
 
@@ -90,7 +89,7 @@ def ship(
             elif stage == "voice":
                 from .voice import factor_from_seed, process_video
 
-                process_video(current, target, factor_from_seed(seed))
+                process_video(current, target, factor_from_seed(identity.voice_seed))
             current = target
     finally:
         if not keep:

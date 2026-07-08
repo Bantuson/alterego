@@ -47,8 +47,11 @@ def face_landmarks(offset=0.0):
 
 
 def make_pipeline(script):
+    from alterego.disguise import DisguiseProfile
+
     return LivePipeline(
-        seed=1, landmarker=FakeLandmarker(script), segmenter=FakeSegmenter(),
+        profile=DisguiseProfile.from_seed(1),
+        landmarker=FakeLandmarker(script), segmenter=FakeSegmenter(),
         grace_frames=1,
     )
 
