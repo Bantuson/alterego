@@ -86,9 +86,16 @@ uv sync
 # 1. Find your camera and microphone names
 uv run alterego devices
 
-# 2. Audition alter egos live — N tries a new seed, K keeps the one you like
-#    (K saves it to alterego.json; disguise uses it automatically from then on)
+# 2. Choose your alter ego. Either audition random ones live
+#    (N = new face, K = keep), or design one deliberately:
 uv run alterego preview
+uv run alterego design --jaw 0.8 --eyes-apart -0.5      # explicit knobs
+uv run alterego design --like reference.jpg              # match a face's proportions
+# The identity (8 face knobs + a voice seed) persists in alterego.json —
+# gitignored, because whoever holds it can reproduce or invert your disguise.
+# --like nudges your PROPORTIONS toward the reference within a naturalness
+# budget; it cannot make you look like that person. Prefer AI-generated
+# reference portraits over photos of real people.
 
 # 3. Record camera + screen (press Enter to stop)
 uv run alterego record --camera "Your Camera Name" --mic "Your Mic Name" --screen
