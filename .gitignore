@@ -14,9 +14,14 @@ build/
 recordings/
 renders/
 
-# Your alter-ego seed. It's the key to your public identity — if it
-# leaks, anyone can reproduce (or invert) your disguise. Never commit.
+# Your alter-ego identities. They're the keys to your public personas —
+# if they leak, anyone can reproduce (or invert) your disguises.
 alterego.json
+identities/
+
+# Cached face scans for the studio UI: literal biometric geometry.
+# Never leaves this machine, never enters git.
+.alterego-cache/
 
 # Editor / OS noise
 .vscode/
