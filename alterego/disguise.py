@@ -153,7 +153,7 @@ def displacement_field(
     shape: tuple[int, int],
     points: np.ndarray,
     shifts: np.ndarray,
-    sigma: float,
+    sigma: float | np.ndarray,
     scale: float = 0.25,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Build a dense "where should each pixel sample from" map.
@@ -177,8 +177,12 @@ def displacement_field(
     field_y = np.zeros((small_h, small_w), np.float32)
     weight_sum = np.zeros((small_h, small_w), np.float32)
 
-    two_sigma_sq = 2 * (sigma * scale) ** 2
-    for (px, py), (dx, dy) in zip(points * scale, shifts * scale):
+    # sigma may be one number (single face) or one per control point —
+    # in a two-shot each face needs falloff scaled to ITS size, or the
+    # close face's warp bleeds onto the far one.
+    sigmas = np.broadcast_to(np.asarray(sigma, np.float32), (len(points),))
+    for (px, py), (dx, dy), point_sigma in zip(points * scale, shifts * scale, sigmas):
+        two_sigma_sq = 2 * (point_sigma * scale) ** 2
         dist_sq = (xs - px) ** 2 + (ys - py) ** 2
         weight = np.exp(-dist_sq / two_sigma_sq)
         field_x += weight * dx
@@ -199,18 +203,38 @@ def displacement_field(
     return field_x, field_y
 
 
-def apply_disguise(frame: np.ndarray, landmarks: np.ndarray, profile: DisguiseProfile) -> np.ndarray:
-    """Warp one frame according to the profile."""
-    points, shifts = control_shifts(landmarks, profile)
-    face_width = np.linalg.norm(
-        landmarks[POINT["cheek_left"]] - landmarks[POINT["cheek_right"]]
-    )
+def apply_disguise_multi(
+    frame: np.ndarray, faces: list[tuple[np.ndarray, DisguiseProfile]]
+) -> np.ndarray:
+    """Warp any number of faces in ONE pass.
+
+    All faces' control points go into a single displacement field and
+    a single remap. Faces don't overlap in space, so their Gaussians
+    don't interact — N faces cost one warp, not N warps. Each point
+    carries a sigma from its own face's width, so a close-up face and
+    a distant face each get correctly sized falloff.
+    """
+    if not faces:
+        return frame
+
+    all_points, all_shifts, all_sigmas = [], [], []
+    for landmarks, profile in faces:
+        points, shifts = control_shifts(landmarks, profile)
+        face_width = np.linalg.norm(
+            landmarks[POINT["cheek_left"]] - landmarks[POINT["cheek_right"]]
+        )
+        all_points.append(points)
+        all_shifts.append(shifts)
+        all_sigmas.append(np.full(len(points), face_width * 0.18, np.float32))
 
     # remap() is a BACKWARD warp: for each output pixel it asks "which
     # input pixel do I show?". To push a feature +d we therefore sample
     # from -d, hence the minus sign on the shifts.
     field_x, field_y = displacement_field(
-        frame.shape[:2], points, -shifts, sigma=face_width * 0.18
+        frame.shape[:2],
+        np.concatenate(all_points),
+        -np.concatenate(all_shifts),
+        sigma=np.concatenate(all_sigmas),
     )
 
     height, width = frame.shape[:2]
@@ -226,38 +250,65 @@ def apply_disguise(frame: np.ndarray, landmarks: np.ndarray, profile: DisguisePr
     )
 
 
-def process_video(src: str | Path, dst: str | Path, profile: DisguiseProfile) -> None:
+def apply_disguise(frame: np.ndarray, landmarks: np.ndarray, profile: DisguiseProfile) -> np.ndarray:
+    """Warp one frame, one face (preview/design/live use this form)."""
+    return apply_disguise_multi(frame, [(landmarks, profile)])
+
+
+def process_video(
+    src: str | Path,
+    dst: str | Path,
+    profiles: DisguiseProfile | list[DisguiseProfile],
+) -> None:
     """Run the disguise over a whole recording, preserving audio.
 
-    Frames where no face is detected pass through untouched — that is
-    the safe default for screen-share segments or empty-chair moments.
+    One profile = the classic single-face path. Several profiles =
+    multi-person mode: faces are TRACKED across frames (tracking.py)
+    and each stable track wears one identity — slot 0 is the first
+    profile, assigned left-to-right as people appear. Frames where a
+    face is not detected pass through untouched; coverage is reported
+    per identity at the end.
     """
-    landmarker = FaceLandmarker()
-    smoother = LandmarkSmoother()
-    counts = {"total": 0, "disguised": 0}
+    from .tracking import CentroidTracker, SlotAssigner
+
+    if isinstance(profiles, DisguiseProfile):
+        profiles = [profiles]
+
+    landmarker = FaceLandmarker(max_faces=len(profiles))
+    tracker = CentroidTracker()
+    assigner = SlotAssigner(n_slots=len(profiles))
+    smoothers: dict[int, LandmarkSmoother] = {}
+    counts = {"total": 0, "covered": [0] * len(profiles)}
 
     def disguise_frame(frame: np.ndarray) -> np.ndarray:
         counts["total"] += 1
-        landmarks = smoother.update(landmarker.detect(frame))
-        if landmarks is None:
-            return frame
-        counts["disguised"] += 1
-        return apply_disguise(frame, landmarks, profile)
+        visible = tracker.update(landmarker.detect_all(frame))
+        slots = assigner.assign(visible, tracker.active_ids())
+
+        faces: list[tuple[np.ndarray, DisguiseProfile]] = []
+        for track_id, slot in slots.items():
+            smoother = smoothers.setdefault(track_id, LandmarkSmoother())
+            landmarks = smoother.update(visible[track_id])
+            faces.append((landmarks, profiles[slot]))
+            counts["covered"][slot] += 1
+        return apply_disguise_multi(frame, faces)
 
     try:
         stream_video(src, dst, disguise_frame)
     finally:
         landmarker.close()
 
-    # Silent passthrough is a PRIVACY failure: every frame without a
-    # detected face went through with your real face untouched. Make
-    # low coverage impossible to miss.
-    coverage = counts["disguised"] / max(counts["total"], 1)
-    if coverage < 0.9:
-        print(
-            f"⚠ face detected on only {coverage:.0%} of frames — the rest "
-            f"show your REAL face. Common cause: footage too dark. "
-            f"Try `enhance --night` BEFORE disguise, or re-record with light."
-        )
-    else:
-        print(f"  disguise covered {coverage:.0%} of frames")
+    # Silent passthrough is a PRIVACY failure: every frame where an
+    # identity had no detected face went through with a real face
+    # untouched. Make low coverage impossible to miss — per person.
+    for slot, covered in enumerate(counts["covered"]):
+        coverage = covered / max(counts["total"], 1)
+        label = f"identity {slot + 1}/{len(profiles)}"
+        if coverage < 0.9:
+            print(
+                f"⚠ {label}: face found on only {coverage:.0%} of frames — "
+                f"the rest show a REAL face. Too dark, out of frame, or "
+                f"fewer people than identities?"
+            )
+        else:
+            print(f"  {label}: disguise covered {coverage:.0%} of frames")

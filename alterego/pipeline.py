@@ -28,6 +28,7 @@ from .settings import load_identity
 def ship(
     src: str | Path,
     out: str | Path | None = None,
+    identity_name: str | None = None,
     image: str | Path | None = None,
     night: bool = False,
     fillers: bool = True,
@@ -39,7 +40,7 @@ def ship(
     src = Path(src)
     final = Path(out) if out else src.with_name(f"{src.stem}_ship{src.suffix}")
 
-    identity = load_identity()
+    identity = load_identity(identity_name)
     if identity is None:
         raise SystemExit(
             "ship needs your saved identity. Run `alterego preview` "

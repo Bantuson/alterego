@@ -42,35 +42,55 @@ def _ensure_model() -> Path:
 class FaceLandmarker:
     """Wraps MediaPipe's Face Landmarker to return pixel-coordinate landmarks."""
 
-    def __init__(self) -> None:
+    def __init__(self, max_faces: int = 1) -> None:
         options = vision.FaceLandmarkerOptions(
             base_options=BaseOptions(model_asset_path=str(_ensure_model())),
             # VIDEO mode tracks the face between frames instead of
             # searching from scratch each time — faster and steadier.
             running_mode=vision.RunningMode.VIDEO,
-            num_faces=1,
+            num_faces=max_faces,
         )
         self._landmarker = vision.FaceLandmarker.create_from_options(options)
         # VIDEO mode requires a strictly increasing clock. Frame times
         # don't need to be exact, so we tick a fake 33 ms (≈30 fps).
         self._clock_ms = 0
 
+    def _detect_raw(self, frame_bgr: np.ndarray):
+        rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+        self._clock_ms += 33
+        return self._landmarker.detect_for_video(image, self._clock_ms)
+
     def detect(self, frame_bgr: np.ndarray) -> np.ndarray | None:
-        """Return a (478, 2) array of [x, y] pixel positions, or None.
+        """Return a (478, 2) array of [x, y] pixel positions for the
+        first face, or None.
 
         MediaPipe wants RGB and returns coordinates normalized to 0..1,
         so we convert on the way in and scale up on the way out.
         """
-        rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-        image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-        self._clock_ms += 33
-        result = self._landmarker.detect_for_video(image, self._clock_ms)
+        faces = self.detect_all(frame_bgr)
+        return faces[0] if faces else None
+
+    def detect_all(self, frame_bgr: np.ndarray) -> list[np.ndarray]:
+        """Every detected face's landmarks (up to max_faces), in the
+        model's arbitrary order — tracking.py makes the order stable."""
+        result = self._detect_raw(frame_bgr)
+        height, width = frame_bgr.shape[:2]
+        return [
+            np.array([[p.x * width, p.y * height] for p in face])
+            for face in result.face_landmarks
+        ]
+
+    def detect_3d(self, frame_bgr: np.ndarray) -> np.ndarray | None:
+        """Like detect(), but keeps MediaPipe's depth estimate as a
+        third column — the studio UI's face constellation uses it."""
+        result = self._detect_raw(frame_bgr)
         if not result.face_landmarks:
             return None
-
         height, width = frame_bgr.shape[:2]
-        points = result.face_landmarks[0]
-        return np.array([[p.x * width, p.y * height] for p in points])
+        return np.array(
+            [[p.x * width, p.y * height, p.z * width] for p in result.face_landmarks[0]]
+        )
 
     def close(self) -> None:
         self._landmarker.close()

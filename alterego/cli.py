@@ -121,6 +121,10 @@ def cmd_design(args: argparse.Namespace) -> None:
 
     existing = load_identity()
 
+    # Named personas load/save from identities/<name>.json; the
+    # default (no --name) remains alterego.json.
+    existing = load_identity(args.name) or existing
+
     if args.like:
         from .design import (
             knobs_from_reference,
@@ -191,7 +195,7 @@ def cmd_design(args: argparse.Namespace) -> None:
             print("not saved.")
             return
 
-    path = save_identity(profile, strength=1.0, voice_seed=voice_seed)
+    path = save_identity(profile, strength=1.0, voice_seed=voice_seed, name=args.name)
     print(f"✓ identity saved -> {path}")
 
 
@@ -200,19 +204,23 @@ def cmd_disguise(args: argparse.Namespace) -> None:
     from .settings import load_identity
 
     if args.seed is not None:
-        profile = DisguiseProfile.from_seed(args.seed, args.strength)
+        profiles = [DisguiseProfile.from_seed(args.seed, args.strength)]
     else:
-        identity = load_identity()
-        if identity is None:
-            raise SystemExit(
-                "No saved identity. Run `alterego preview` (press K) or "
-                "`alterego design`, or pass --seed."
-            )
-        profile = identity.profile
-        print("using saved identity")
+        names = args.identity or [None]
+        profiles = []
+        for name in names:
+            identity = load_identity(name)
+            if identity is None:
+                raise SystemExit(
+                    f"Identity {name or '(default)'} not found. Run "
+                    "`alterego design --name <name>` or `alterego preview`."
+                )
+            profiles.append(identity.profile)
+        label = ", ".join(n or "default" for n in names)
+        print(f"using identit{'ies' if len(names) > 1 else 'y'}: {label}")
 
     out = args.out or _default_out(args.video, "alterego")
-    process_video(args.video, out, profile)
+    process_video(args.video, out, profiles)
 
 
 def cmd_prep(args: argparse.Namespace) -> None:
@@ -243,7 +251,7 @@ def cmd_enhance(args: argparse.Namespace) -> None:
 def cmd_live(args: argparse.Namespace) -> None:
     from .settings import load_identity
 
-    identity = load_identity()
+    identity = load_identity(args.identity)
     if identity is None:
         raise SystemExit(
             "live needs your saved identity. Run `alterego preview` (K) or `alterego design`."
@@ -298,6 +306,7 @@ def cmd_ship(args: argparse.Namespace) -> None:
     ship(
         args.video,
         out=args.out,
+        identity_name=args.identity,
         image=args.image,
         night=args.night,
         fillers=not args.no_fillers,
@@ -313,7 +322,7 @@ def cmd_voice(args: argparse.Namespace) -> None:
 
     factor = args.factor
     if factor is None:
-        identity = load_identity()
+        identity = load_identity(args.identity)
         if identity is None:
             raise SystemExit(
                 "No --factor given and no saved identity to derive one from. "
@@ -387,12 +396,18 @@ def main() -> None:
     p.add_argument("--like", metavar="PHOTO", help="match a reference face's proportions")
     p.add_argument("--tweak", action="store_true", help="start from the saved identity")
     p.add_argument("--save", action="store_true", help="save without previewing")
+    p.add_argument("--name", help="save as a named persona (identities/<name>.json)")
     p.add_argument("--camera-index", type=int, default=0)
     p.set_defaults(fn=cmd_design)
 
-    p = sub.add_parser("disguise", help="apply your alter ego to a recording")
+    p = sub.add_parser("disguise", help="apply alter ego(s) to a recording")
     p.add_argument("video")
-    p.add_argument("--seed", type=int, help="alter ego seed (default: saved identity)")
+    p.add_argument(
+        "--identity", action="append", metavar="NAME",
+        help="named persona; repeat for multi-person shots — first name "
+        "= leftmost person (default: your main identity)",
+    )
+    p.add_argument("--seed", type=int, help="alter ego seed (overrides identities)")
     p.add_argument("--strength", type=float, default=1.0)
     p.add_argument("--out")
     p.set_defaults(fn=cmd_disguise)
@@ -421,6 +436,7 @@ def main() -> None:
     p.set_defaults(fn=cmd_enhance)
 
     p = sub.add_parser("live", help="real-time alter ego -> virtual camera (or preview)")
+    p.add_argument("--identity", metavar="NAME", help="named persona to go live as")
     p.add_argument("--image", help="backdrop image or video plate")
     p.add_argument("--width", type=int, default=640, help="processing width (default 640)")
     p.add_argument("--camera-index", type=int, default=0)
@@ -442,6 +458,7 @@ def main() -> None:
 
     p = sub.add_parser("ship", help="full pipeline: disguise, background, enhance, cut, voice")
     p.add_argument("video")
+    p.add_argument("--identity", metavar="NAME", help="named persona to ship as")
     p.add_argument("--image", help="backdrop image or video plate for the background stage")
     p.add_argument("--night", action="store_true", help="salvage mode for underlit footage")
     p.add_argument("--no-fillers", action="store_true", help="skip filler-word removal")
@@ -453,6 +470,7 @@ def main() -> None:
 
     p = sub.add_parser("voice", help="pitch-shift your voice to your alter ego's")
     p.add_argument("video")
+    p.add_argument("--identity", metavar="NAME", help="named persona for the voice")
     p.add_argument("--factor", type=float, help="pitch ratio (default: derived from saved seed)")
     p.add_argument("--out")
     p.set_defaults(fn=cmd_voice)
