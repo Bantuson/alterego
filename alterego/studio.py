@@ -79,6 +79,58 @@ class Job:
 JOBS: dict[str, Job] = {}
 LIVE_PROC: dict[str, subprocess.Popen | None] = {"proc": None}
 
+# One camera, one owner. The mirror preview, the scan, and the live
+# process all want the webcam; whoever holds this lock has it, and
+# everyone else gets an honest 409 instead of a mysterious black feed.
+CAMERA_LOCK = threading.Lock()
+PREVIEW = {"stop": False, "knobs": None, "generation": 0}
+
+
+def preview_frames(identity_name: str | None, image: str | None):
+    """Generator of JPEG frames: the REAL disguise on the REAL camera.
+
+    This is the same LivePipeline that feeds the virtual camera —
+    fail-closed pixelation included — encoded as an MJPEG stream any
+    <img> tag can display. Knob changes arrive via PREVIEW['knobs']
+    and swap the warp in place, so the browser's mirror follows the
+    mixing desk in near real time.
+    """
+    import cv2
+
+    from .disguise import DisguiseProfile
+    from .live import CachedDisguise, LivePipeline
+    from .settings import load_identity
+
+    identity = load_identity(identity_name)
+    profile = identity.profile if identity else DisguiseProfile.from_dict(
+        {k: 0.0 for k in DisguiseProfile.from_seed(0).to_dict()}
+    )
+    pipeline = LivePipeline(profile, backdrop=image or None)
+    capture = cv2.VideoCapture(0)
+    applied_generation = PREVIEW["generation"]
+    try:
+        if not capture.isOpened():
+            return
+        while not PREVIEW["stop"]:
+            ok, frame = capture.read()
+            if not ok:
+                break
+            if PREVIEW["generation"] != applied_generation and PREVIEW["knobs"]:
+                pipeline.disguise = CachedDisguise(
+                    DisguiseProfile.from_dict(PREVIEW["knobs"])
+                )
+                applied_generation = PREVIEW["generation"]
+            height = 360
+            width = int(frame.shape[1] * height / frame.shape[0])
+            frame = cv2.resize(frame, (width, height))
+            out, _protected = pipeline.process(frame)
+            ok, jpeg = cv2.imencode(".jpg", out, [cv2.IMWRITE_JPEG_QUALITY, 82])
+            if ok:
+                yield jpeg.tobytes()
+    finally:
+        capture.release()
+        pipeline.close()
+
 
 def _cli(*args: str) -> list[str]:
     """A pipeline command, run by the same interpreter (the venv)."""
@@ -185,6 +237,7 @@ class StudioHandler(BaseHTTPRequestHandler):
     # -- GET ----------------------------------------------------------
     def do_GET(self) -> None:  # noqa: N802 (http.server naming)
         # Route on the path alone — "/?demo" must still serve "/".
+        self.raw_path = self.path
         self.path = self.path.split("?")[0]
         if self.path in STATIC:
             name, mime = STATIC[self.path]
@@ -217,13 +270,47 @@ class StudioHandler(BaseHTTPRequestHandler):
             return
 
         if self.path == "/api/files":
-            videos = []
+            videos = {}
             for folder in (Path("recordings"), Path(".")):
                 if folder.exists():
-                    videos += [
-                        str(p) for p in folder.glob("*.mp4")
-                    ] + [str(p) for p in folder.glob("*.mov")]
-            self._json(sorted(set(videos)))
+                    for pattern in ("*.mp4", "*.mov"):
+                        for p in folder.glob(pattern):
+                            stat = p.stat()
+                            videos[str(p)] = {
+                                "path": str(p),
+                                "mb": round(stat.st_size / 1e6, 1),
+                                "mtime": int(stat.st_mtime),
+                            }
+            self._json(sorted(videos.values(), key=lambda v: -v["mtime"]))
+            return
+
+        if self.path.startswith("/api/preview/stream"):
+            from urllib.parse import parse_qs, urlparse
+
+            if LIVE_PROC["proc"] is not None and LIVE_PROC["proc"].poll() is None:
+                self._json({"error": "camera is on air — cut the feed first"}, 409)
+                return
+            if not CAMERA_LOCK.acquire(blocking=False):
+                self._json({"error": "camera busy"}, 409)
+                return
+            PREVIEW["stop"] = False
+            try:
+                query = parse_qs(urlparse(self.raw_path).query)
+                identity = (query.get("identity") or [None])[0] or None
+                image = (query.get("image") or [None])[0] or None
+                self.send_response(200)
+                self.send_header(
+                    "Content-Type", "multipart/x-mixed-replace; boundary=frame")
+                self.end_headers()
+                for jpeg in preview_frames(identity, image):
+                    self.wfile.write(
+                        b"--frame\r\nContent-Type: image/jpeg\r\n"
+                        + f"Content-Length: {len(jpeg)}\r\n\r\n".encode()
+                        + jpeg + b"\r\n")
+            except (ConnectionAbortedError, BrokenPipeError, OSError):
+                pass
+            finally:
+                CAMERA_LOCK.release()
             return
 
         if self.path.startswith("/api/jobs/"):
@@ -252,10 +339,13 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return
 
         if self.path == "/slow":
-            # Screenshot support: ?demo pages load this as an image,
-            # which HOLDS the browser's load event until the scene has
-            # settled — headless captures then show the real UI.
-            time.sleep(2.5)
+            # Screenshot support: demo/hold pages load this as an
+            # image, which HOLDS the browser's load event until the
+            # scene has settled — headless captures show the real UI.
+            from urllib.parse import parse_qs, urlparse
+
+            ms = int((parse_qs(urlparse(self.raw_path).query).get("ms") or [2500])[0])
+            time.sleep(min(ms, 10_000) / 1000)
             self.send_response(204)
             self.end_headers()
             return
@@ -272,7 +362,22 @@ class StudioHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         try:
             if self.path == "/api/scan":
-                self._json({"points": scan_face()})
+                # Take the camera politely: stop any running preview.
+                PREVIEW["stop"] = True
+                with CAMERA_LOCK:
+                    PREVIEW["stop"] = False
+                    self._json({"points": scan_face()})
+                return
+
+            if self.path == "/api/preview/knobs":
+                PREVIEW["knobs"] = self._body().get("knobs")
+                PREVIEW["generation"] += 1
+                self._json({"ok": True})
+                return
+
+            if self.path == "/api/preview/stop":
+                PREVIEW["stop"] = True
+                self._json({"ok": True})
                 return
 
             if self.path == "/api/identities":
@@ -304,6 +409,11 @@ class StudioHandler(BaseHTTPRequestHandler):
             if self.path == "/api/live/start":
                 if LIVE_PROC["proc"] is not None and LIVE_PROC["proc"].poll() is None:
                     raise ValueError("live already running")
+                # The live process needs the camera: stop the preview
+                # and wait for it to let go before launching.
+                PREVIEW["stop"] = True
+                with CAMERA_LOCK:
+                    pass
                 data = self._body()
                 args = _cli("live", "--window")  # window mode: visible, stoppable
                 if data.get("identity"):
@@ -329,7 +439,15 @@ class StudioHandler(BaseHTTPRequestHandler):
             self._json({"error": str(error)}, 400)
 
 
+def _warm_imports() -> None:
+    """Import the heavy stack (cv2, mediapipe, numpy) off the request
+    path — otherwise the FIRST click in the UI pays 3-5 seconds of
+    import time and the studio feels broken on a small machine."""
+    from . import disguise, live, settings  # noqa: F401
+
+
 def run_studio(port: int = 4700, open_browser: bool = True) -> None:
+    threading.Thread(target=_warm_imports, daemon=True).start()
     server = ThreadingHTTPServer(("127.0.0.1", port), StudioHandler)
     url = f"http://127.0.0.1:{port}"
     print(f"● studio at {url}  (local only — Ctrl+C to stop)")
