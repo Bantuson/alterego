@@ -41,6 +41,8 @@ SCAN_CACHE = CACHE_DIR / "scan.json"
 STATIC = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+    "/topology.js": ("topology.js", "text/javascript; charset=utf-8"),
+    "/canonical.js": ("canonical.js", "text/javascript; charset=utf-8"),
     "/three.module.min.js": ("three.module.min.js", "text/javascript; charset=utf-8"),
 }
 

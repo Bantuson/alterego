@@ -43,6 +43,17 @@ floats above it in fixed regions:
 - Left rail (IDENTITY): saved persona chips.
 - Left overlay (STUDIO/LIVE): job console, mono, no fading toasts.
 
+## The specimen
+
+The centerpiece renders MediaPipe's REAL face-mesh topology: bright
+feature contours (oval, eyes, brows, nose, lips) over faint
+tesselation wire, two-layer additive points (core + halo bloom), in a
+measurement room (dot-grid graticule wall + rotating reticle rings,
+both with less parallax than the face = depth). Before any scan the
+specimen is the CANONICAL face model, labeled as such in the SIGNAL
+readout — never an abstract particle blob, never a fake "you".
+Green on the wire is truthful data: displacement magnitude.
+
 ## Motion
 
 - Constellation: ambient drift + mouse parallax; springs (stiffness

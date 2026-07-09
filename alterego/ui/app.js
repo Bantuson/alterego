@@ -1,12 +1,16 @@
-/* The studio frontend.
+/* The studio frontend: a precision instrument, not a particle demo.
  *
- * The constellation is not decoration: it renders the user's real
- * 478 scanned landmarks, and the knob morphs use the SAME control-
- * point rules as alterego/disguise.py (ported below). Points glow
- * green exactly where — and exactly as much as — the disguise will
- * move real pixels. Truthful previews (PRODUCT.md, principle 4).
+ * Rendering doctrine (DESIGN.md): the scanned 478 landmarks are drawn
+ * with MediaPipe's REAL face-mesh topology (topology.js) — faint
+ * tesselation wire + bright feature contours — over a measurement
+ * room (graticule + reticle). The knob morphs use the SAME control-
+ * point rules as alterego/disguise.py, ported below; points and wire
+ * glow green exactly where — and as much as — the disguise will move
+ * real pixels. Truthful previews, always.
  */
 import * as THREE from "/three.module.min.js";
+import { TESSELATION, CONTOURS } from "/topology.js";
+import { CANONICAL } from "/canonical.js";
 
 /* ---------- the warp math, ported from disguise.py ---------- */
 
@@ -54,35 +58,91 @@ function controlShifts(pts, knobs) {
   const brow = knobs.brow_height * 0.025 * faceWidth;
   moves.push([p.brow_left, 0, -brow]);
   moves.push([p.brow_right, 0, -brow]);
-  return { moves, sigma: faceWidth * 0.18 };
+  return { moves, sigma: faceWidth * 0.18, faceWidth };
 }
 
 /* Gaussian splat, per landmark (the pointwise displacement_field). */
 function displaceAll(pts, knobs) {
   const { moves, sigma } = controlShifts(pts, knobs);
   const twoSigmaSq = 2 * sigma * sigma;
-  return pts.map(([x, y, z]) => {
+  let maxShift = 0;
+  const out = pts.map(([x, y, z]) => {
     let dx = 0, dy = 0, wsum = 0;
     for (const [[cx, cy], mx, my] of moves) {
       const w = Math.exp(-((x - cx) ** 2 + (y - cy) ** 2) / twoSigmaSq);
       dx += w * mx; dy += w * my; wsum += w;
     }
     const norm = Math.max(wsum, 1);
+    maxShift = Math.max(maxShift, Math.hypot(dx / norm, dy / norm));
     return [x + dx / norm, y + dy / norm, z];
   });
+  return { out, maxShift };
 }
 
-/* ---------- three.js scene ---------- */
+/* ---------- three.js: the room ---------- */
 
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const canvas = document.getElementById("stage");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 50);
-camera.position.z = 4.6;
-const group = new THREE.Group();
-scene.add(group);
+scene.fog = new THREE.Fog(new THREE.Color("#070a15"), 4.2, 9.5);
+const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 60);
+camera.position.z = 5.0;
+
+const room = new THREE.Group();   // graticule + reticle: moves less (parallax depth)
+const face = new THREE.Group();   // the specimen
+scene.add(room, face);
+
+/* Graticule: a fine dot-grid wall far behind the specimen. */
+function graticule() {
+  const c = document.createElement("canvas");
+  c.width = c.height = 512;
+  const g = c.getContext("2d");
+  g.fillStyle = "rgba(160,175,215,0.55)";
+  for (let x = 16; x < 512; x += 32)
+    for (let y = 16; y < 512; y += 32) g.fillRect(x, y, 1.4, 1.4);
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(7, 4.5);
+  const wall = new THREE.Mesh(
+    new THREE.PlaneGeometry(30, 18),
+    new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.16, fog: false })
+  );
+  wall.position.z = -4.5;
+  return wall;
+}
+room.add(graticule());
+
+/* Reticle: measurement rings + tick marks around the specimen. */
+function reticle() {
+  const group = new THREE.Group();
+  const mat = (opacity) => new THREE.LineBasicMaterial({
+    color: 0x3d4a75, transparent: true, opacity, fog: false });
+  for (const [radius, opacity] of [[1.55, 0.55], [1.9, 0.3]]) {
+    const pts = [];
+    for (let i = 0; i <= 128; i++) {
+      const a = (i / 128) * Math.PI * 2;
+      pts.push(new THREE.Vector3(Math.cos(a) * radius, Math.sin(a) * radius, 0));
+    }
+    group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat(opacity)));
+  }
+  const ticks = [];
+  for (let i = 0; i < 72; i++) {
+    const a = (i / 72) * Math.PI * 2;
+    const r1 = 1.9, r2 = i % 6 === 0 ? 2.02 : 1.96;
+    ticks.push(new THREE.Vector3(Math.cos(a) * r1, Math.sin(a) * r1, 0),
+               new THREE.Vector3(Math.cos(a) * r2, Math.sin(a) * r2, 0));
+  }
+  group.add(new THREE.LineSegments(
+    new THREE.BufferGeometry().setFromPoints(ticks), mat(0.45)));
+  group.position.z = -0.6;
+  return group;
+}
+const ret = reticle();
+room.add(ret);
+
+/* ---------- the specimen: real topology, two-layer glow ---------- */
 
 const N = 478;
 const positions = new Float32Array(N * 3);
@@ -90,15 +150,14 @@ const colors = new Float32Array(N * 3);
 const velocities = new Float32Array(N * 3);
 const targets = new Float32Array(N * 3);
 
-/* Round glowing sprite so points render as orbs, not squares. */
 function dotTexture() {
   const c = document.createElement("canvas");
   c.width = c.height = 64;
-  const g = c.getContext("2d").createRadialGradient(32, 32, 0, 32, 32, 32);
-  g.addColorStop(0, "rgba(255,255,255,1)");
-  g.addColorStop(0.4, "rgba(255,255,255,0.5)");
-  g.addColorStop(1, "rgba(255,255,255,0)");
   const ctx = c.getContext("2d");
+  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, "rgba(255,255,255,1)");
+  g.addColorStop(0.35, "rgba(255,255,255,0.55)");
+  g.addColorStop(1, "rgba(255,255,255,0)");
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, 64, 64);
   return new THREE.CanvasTexture(c);
@@ -107,89 +166,82 @@ function dotTexture() {
 const geometry = new THREE.BufferGeometry();
 geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
 geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-const points = new THREE.Points(geometry, new THREE.PointsMaterial({
-  size: 0.045, map: dotTexture(), vertexColors: true, transparent: true,
-  depthWrite: false, blending: THREE.AdditiveBlending,
+const sprite = dotTexture();
+
+/* Layer 1: crisp cores. Layer 2: wide soft halos = cheap bloom. */
+const cores = new THREE.Points(geometry, new THREE.PointsMaterial({
+  size: 0.030, map: sprite, vertexColors: true, transparent: true,
+  opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending,
 }));
-group.add(points);
+const halos = new THREE.Points(geometry, new THREE.PointsMaterial({
+  size: 0.13, map: sprite, vertexColors: true, transparent: true,
+  opacity: 0.16, depthWrite: false, blending: THREE.AdditiveBlending,
+}));
+face.add(halos, cores);
 
-let lines = null; // built after a scan (kNN over the real landmarks)
+/* The wire that makes it a FACE: faint tesselation, bright contours. */
+const tessGeo = new THREE.BufferGeometry();
+tessGeo.setAttribute("position", geometry.attributes.position);
+tessGeo.setIndex(new THREE.BufferAttribute(TESSELATION, 1));
+face.add(new THREE.LineSegments(tessGeo, new THREE.LineBasicMaterial({
+  color: 0x46557f, transparent: true, opacity: 0.14,
+  depthWrite: false, blending: THREE.AdditiveBlending,
+})));
 
-const BASE = new THREE.Color(0.36, 0.42, 0.62);   // resting ink-blue
-const HOT = new THREE.Color(0.22, 0.9, 0.03);     // accent: warped points
+const contourGeo = new THREE.BufferGeometry();
+contourGeo.setAttribute("position", geometry.attributes.position);
+contourGeo.setAttribute("color", geometry.attributes.color);
+contourGeo.setIndex(new THREE.BufferAttribute(CONTOURS, 1));
+face.add(new THREE.LineSegments(contourGeo, new THREE.LineBasicMaterial({
+  vertexColors: true, transparent: true, opacity: 0.85,
+  depthWrite: false, blending: THREE.AdditiveBlending,
+})));
 
-/* Pre-scan idle: an anonymous, breathing shell of points. */
-let scanned = null;   // raw scan (pixel space) once available
-let normalized = null; // scan mapped into scene space
+const BASE = new THREE.Color(0.52, 0.60, 0.86);
+const HOT = new THREE.Color(0.25, 0.95, 0.06);
+
+/* Before any real scan the specimen is MediaPipe's CANONICAL face —
+ * the neutral reference head, honestly labeled as such. Scanning
+ * replaces it with you. Either way the knobs morph what you see. */
+let scanned = null;
+const specimen = () => scanned ?? CANONICAL;
 for (let i = 0; i < N; i++) {
-  const phi = Math.acos(1 - 2 * (i + 0.5) / N);
-  const theta = Math.PI * (1 + Math.sqrt(5)) * i;
-  const r = 1.15;
-  targets[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-  targets[i * 3 + 1] = r * Math.cos(phi) * 0.72;
-  targets[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta) * 0.5;
-  positions[i * 3] = (Math.random() - 0.5) * 8;
-  positions[i * 3 + 1] = (Math.random() - 0.5) * 8;
-  positions[i * 3 + 2] = (Math.random() - 0.5) * 8;
+  positions[i * 3] = (Math.random() - 0.5) * 10;
+  positions[i * 3 + 1] = (Math.random() - 0.5) * 10;
+  positions[i * 3 + 2] = (Math.random() - 0.5) * 6;
   BASE.toArray(colors, i * 3);
 }
 
 function normalizeScan(pts) {
-  /* Pixel space -> scene space: center, scale by face height, flip Y
-   * (screens grow downward, scenes grow upward). */
   const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
   const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
   const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
   const span = Math.max(...ys) - Math.min(...ys);
-  const s = 2.3 / span;
-  return pts.map(([x, y, z]) => [(x - cx) * s, -(y - cy) * s, -z * s * 0.9]);
+  const s = 2.5 / span;
+  return pts.map(([x, y, z]) => [(x - cx) * s, -(y - cy) * s, -z * s]);
 }
 
+let maxShiftPx = 0;
 function setTargetsFromScan(knobs) {
-  const displaced = displaceAll(scanned, knobs);
-  normalized = normalizeScan(displaced);
-  const rest = normalizeScan(scanned);
+  const source = specimen();
+  const { out: displaced, maxShift } = displaceAll(source, knobs);
+  maxShiftPx = maxShift;
+  const shaped = normalizeScan(displaced);
+  const rest = normalizeScan(source);
   for (let i = 0; i < N; i++) {
-    targets[i * 3] = normalized[i][0];
-    targets[i * 3 + 1] = normalized[i][1];
-    targets[i * 3 + 2] = normalized[i][2];
-    /* Color = truthful change map: how far this landmark moves. */
-    const d = Math.hypot(
-      normalized[i][0] - rest[i][0], normalized[i][1] - rest[i][1]);
-    const heat = Math.min(d * 22, 1);
-    const c = BASE.clone().lerp(HOT, heat);
-    c.toArray(colors, i * 3);
+    targets[i * 3] = shaped[i][0];
+    targets[i * 3 + 1] = shaped[i][1];
+    targets[i * 3 + 2] = shaped[i][2];
+    /* Truthful change map: green in proportion to real movement. */
+    const d = Math.hypot(shaped[i][0] - rest[i][0], shaped[i][1] - rest[i][1]);
+    BASE.clone().lerp(HOT, Math.min(d * 22, 1)).toArray(colors, i * 3);
   }
   geometry.attributes.color.needsUpdate = true;
+  updateReadouts();
 }
 
-function buildLines() {
-  /* Faint web between each landmark and its 3 nearest neighbours —
-   * turns a dust cloud into a readable face. Computed once. */
-  const idx = [];
-  for (let i = 0; i < N; i++) {
-    const dists = [];
-    for (let j = 0; j < N; j++) {
-      if (i === j) continue;
-      const dx = normalized[i][0] - normalized[j][0];
-      const dy = normalized[i][1] - normalized[j][1];
-      const dz = normalized[i][2] - normalized[j][2];
-      dists.push([dx * dx + dy * dy + dz * dz, j]);
-    }
-    dists.sort((a, b) => a[0] - b[0]);
-    for (let k = 0; k < 3; k++) idx.push(i, dists[k][1]);
-  }
-  const lineGeo = new THREE.BufferGeometry();
-  lineGeo.setAttribute("position", geometry.attributes.position);
-  lineGeo.setIndex(idx);
-  lines = new THREE.LineSegments(lineGeo, new THREE.LineBasicMaterial({
-    color: 0x2b3a63, transparent: true, opacity: 0.28,
-    depthWrite: false, blending: THREE.AdditiveBlending,
-  }));
-  group.add(lines);
-}
+/* ---------- animation ---------- */
 
-/* Spring integration: stiffness/damping per threejs-animation skill. */
 const STIFF = 60, DAMP = 12;
 const clock = new THREE.Clock();
 let mouseX = 0, mouseY = 0;
@@ -215,13 +267,14 @@ function animate() {
     velocities[i] += force * dt;
     positions[i] += velocities[i] * dt;
   }
-  /* Ambient breath: the mirror is alive, faintly. */
-  if (!reduceMotion) {
-    group.rotation.y = Math.sin(t * 0.12) * 0.16 + mouseX * 0.14;
-    group.rotation.x = mouseY * 0.08;
-    points.material.size = 0.045 + Math.sin(t * 0.8) * 0.004;
-  }
   geometry.attributes.position.needsUpdate = true;
+  if (!reduceMotion) {
+    face.rotation.y = Math.sin(t * 0.1) * 0.22 + mouseX * 0.16;
+    face.rotation.x = mouseY * 0.09;
+    room.rotation.y = mouseX * 0.03;   // parallax: the room barely moves
+    room.rotation.x = mouseY * 0.015;
+    ret.rotation.z = t * 0.02;         // the instrument is running
+  }
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
 }
@@ -244,39 +297,80 @@ function log(text, cls = "") {
 
 const knobState = Object.fromEntries(KNOBS.map(k => [k, 0]));
 
-function refreshConstellation() {
-  if (scanned) setTargetsFromScan(knobState);
+function updateReadouts() {
+  $("#ro-signal").textContent = scanned ? "LIVE SCAN" : "CANONICAL";
+  $("#ro-signal").classList.toggle("on", !!scanned);
+  $("#ro-shift").textContent = `${maxShiftPx.toFixed(1)}px`;
 }
 
-/* Faders */
+function refreshConstellation() {
+  setTargetsFromScan(knobState);
+}
+
+/* The mixing desk: custom bipolar faders (keyboard + pointer). */
 const fadersEl = $("#faders");
+const faderEls = {};
 for (const knob of KNOBS) {
   const row = document.createElement("div");
-  row.className = "fader";
+  row.className = "knob";
   row.innerHTML = `
-    <label for="k-${knob}">${knob.replace("_", " ")}</label>
-    <input type="range" id="k-${knob}" min="-1" max="1" step="0.01" value="0">
-    <output id="o-${knob}">+0.00</output>`;
+    <div class="knob-top">
+      <span class="knob-label">${knob.replace("_", " ")}</span>
+      <span class="knob-value">+0.00</span>
+    </div>
+    <div class="meter" role="slider" tabindex="0" aria-label="${knob.replace("_", " ")}"
+         aria-valuemin="-1" aria-valuemax="1" aria-valuenow="0">
+      <div class="meter-fill"></div><div class="meter-notch"></div><div class="meter-thumb"></div>
+    </div>`;
   fadersEl.appendChild(row);
-  const input = row.querySelector("input");
-  const out = row.querySelector("output");
-  input.addEventListener("input", () => {
-    knobState[knob] = parseFloat(input.value);
+  const meter = row.querySelector(".meter");
+  const fill = row.querySelector(".meter-fill");
+  const thumb = row.querySelector(".meter-thumb");
+  const value = row.querySelector(".knob-value");
+  faderEls[knob] = { meter, fill, thumb, value };
+
+  const render = () => {
     const v = knobState[knob];
-    out.textContent = (v >= 0 ? "+" : "") + v.toFixed(2);
-    out.classList.toggle("hot", Math.abs(v) > 0.005);
+    value.textContent = (v >= 0 ? "+" : "") + v.toFixed(2);
+    value.classList.toggle("hot", Math.abs(v) > 0.005);
+    meter.setAttribute("aria-valuenow", v.toFixed(2));
+    const pct = (v + 1) / 2 * 100;
+    thumb.style.left = `${pct}%`;
+    /* Bipolar fill: grows from the center notch toward the thumb. */
+    fill.style.left = `${Math.min(50, pct)}%`;
+    fill.style.width = `${Math.abs(pct - 50)}%`;
+    fill.classList.toggle("hot", Math.abs(v) > 0.005);
+  };
+  const set = (v) => {
+    knobState[knob] = Math.max(-1, Math.min(1, v));
+    render();
     refreshConstellation();
+  };
+  const fromPointer = (e) => {
+    const rect = meter.getBoundingClientRect();
+    set(((e.clientX - rect.left) / rect.width) * 2 - 1);
+  };
+  meter.addEventListener("pointerdown", (e) => {
+    meter.setPointerCapture(e.pointerId);
+    fromPointer(e);
   });
+  meter.addEventListener("pointermove", (e) => {
+    if (e.buttons) fromPointer(e);
+  });
+  meter.addEventListener("dblclick", () => set(0));
+  meter.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowRight" || e.key === "ArrowUp") set(knobState[knob] + 0.05);
+    if (e.key === "ArrowLeft" || e.key === "ArrowDown") set(knobState[knob] - 0.05);
+    if (e.key === "0") set(0);
+  });
+  row._render = render;
 }
 
 function setKnobs(values) {
   for (const knob of KNOBS) {
     knobState[knob] = values[knob] ?? 0;
-    const input = $(`#k-${knob}`), out = $(`#o-${knob}`);
-    input.value = knobState[knob];
-    out.textContent = (knobState[knob] >= 0 ? "+" : "") + knobState[knob].toFixed(2);
-    out.classList.toggle("hot", Math.abs(knobState[knob]) > 0.005);
   }
+  document.querySelectorAll(".knob").forEach(r => r._render());
   refreshConstellation();
 }
 
@@ -298,12 +392,13 @@ addEventListener("keydown", (e) => { if (e.key === "Escape") show(open); });
 /* Identities */
 async function loadIdentities() {
   const list = await (await fetch("/api/identities")).json();
+  $("#ro-personas").textContent = String(list.length);
   const chips = $("#chips");
   chips.innerHTML = "";
   for (const it of list) {
     const chip = document.createElement("button");
     chip.className = "chip";
-    chip.textContent = it.name ?? "· main identity";
+    chip.textContent = it.name ?? "main identity";
     chip.addEventListener("click", () => {
       document.querySelectorAll(".chip").forEach(c => c.classList.remove("on"));
       chip.classList.add("on");
@@ -314,8 +409,7 @@ async function loadIdentities() {
     chips.appendChild(chip);
   }
   if (!list.length) chips.innerHTML =
-    `<p style="font-family:var(--mono);font-size:.72rem;color:var(--muted)">
-     none yet — shape the knobs and save</p>`;
+    `<p class="empty">none yet — shape the knobs and save</p>`;
 }
 
 $("#btn-zero").addEventListener("click", () => setKnobs({}));
@@ -343,7 +437,6 @@ async function scan(fromCache) {
   }
   $("#hint").classList.add("gone");
   setTargetsFromScan(knobState);
-  if (!lines) buildLines();
   if (!fromCache) log("scan complete — the mirror is yours", "ok");
   return true;
 }
@@ -371,8 +464,8 @@ async function runJob(payload) {
   const events = new EventSource(`/api/jobs/${res.id}/events`);
   events.onmessage = (e) => {
     const line = JSON.parse(e.data);
-    const cls = line.includes("⚠") || line.includes("?") && line.includes("REAL")
-      ? "warn" : line.startsWith("✓") ? "ok" : line.startsWith("✗") ? "err" : "";
+    const cls = line.includes("REAL") ? "warn"
+      : line.startsWith("✓") ? "ok" : line.startsWith("✗") ? "err" : "";
     log(line, cls);
   };
   events.addEventListener("end", () => events.close());
@@ -417,8 +510,9 @@ $("#btn-cut").addEventListener("click", async () => {
  * identity panel opens — used for docs and headless visual checks. */
 (async () => {
   await Promise.all([loadIdentities(), loadFiles(), liveStatus()]);
-  const hadCache = await scan(true);
-  if (hadCache) $("#hint").classList.add("gone");
+  const haveScan = await scan(true);
+  if (!haveScan) setTargetsFromScan(knobState); // the canonical specimen
+  updateReadouts();
   if (location.search.includes("demo")) {
     show("identity");
     setKnobs({ jaw_width: 0.8, eye_spacing: -0.6, lip_fullness: 0.5 });
