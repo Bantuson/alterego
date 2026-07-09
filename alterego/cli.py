@@ -248,6 +248,12 @@ def cmd_enhance(args: argparse.Namespace) -> None:
     process_video(args.video, out, night=args.night)
 
 
+def cmd_studio(args: argparse.Namespace) -> None:
+    from .studio import run_studio
+
+    run_studio(port=args.port, open_browser=not args.no_browser)
+
+
 def cmd_live(args: argparse.Namespace) -> None:
     from .settings import load_identity
 
@@ -434,6 +440,11 @@ def main() -> None:
     p.add_argument("--night", action="store_true", help="salvage mode for underlit footage")
     p.add_argument("--out")
     p.set_defaults(fn=cmd_enhance)
+
+    p = sub.add_parser("studio", help="open the local web studio")
+    p.add_argument("--port", type=int, default=4700)
+    p.add_argument("--no-browser", action="store_true")
+    p.set_defaults(fn=cmd_studio)
 
     p = sub.add_parser("live", help="real-time alter ego -> virtual camera (or preview)")
     p.add_argument("--identity", metavar="NAME", help="named persona to go live as")

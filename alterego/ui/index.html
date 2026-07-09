@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>alterego · studio</title>
+<style>
+  :root {
+    --bg: oklch(0.13 0.02 265);
+    --surface: oklch(0.18 0.025 265 / 0.92);
+    --line: oklch(0.32 0.03 265);
+    --ink: oklch(0.93 0.01 265);
+    --muted: oklch(0.72 0.02 265);
+    --accent: #39E508;
+    --warn: #ffb347;
+    --danger: #ff6b6b;
+    --mono: "Cascadia Code", Consolas, ui-monospace, monospace;
+    --sans: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: var(--sans); font-size: 14px; line-height: 1.5;
+  }
+  #stage { position: fixed; inset: 0; display: block; }
+
+  /* ---- wordmark + pledge ------------------------------------- */
+  header {
+    position: fixed; top: 28px; left: 32px; z-index: 3;
+    pointer-events: none; user-select: none;
+  }
+  header h1 {
+    font-weight: 200; font-size: 1.7rem; letter-spacing: 0.35em;
+    text-transform: lowercase; color: var(--ink);
+  }
+  header h1 b { font-weight: 600; color: var(--accent); }
+  header p {
+    font-family: var(--mono); font-size: 0.72rem; color: var(--muted);
+    margin-top: 6px; letter-spacing: 0.05em;
+  }
+
+  /* ---- the dock ------------------------------------------------ */
+  nav {
+    position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+    z-index: 4; display: flex; gap: 2px; padding: 4px;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 10px; backdrop-filter: blur(8px);
+  }
+  nav button {
+    font-family: var(--mono); font-size: 0.78rem; letter-spacing: 0.14em;
+    background: none; border: 0; color: var(--muted); cursor: pointer;
+    padding: 10px 22px; border-radius: 7px; transition: color .18s, background .18s;
+  }
+  nav button:hover { color: var(--ink); }
+  nav button:focus-visible { outline: 1px solid var(--accent); }
+  nav button.on { color: #061203; background: var(--accent); font-weight: 600; }
+
+  /* ---- panels (progressive disclosure) ------------------------ */
+  .panel {
+    position: fixed; z-index: 3; background: var(--surface);
+    border: 1px solid var(--line); border-radius: 12px;
+    backdrop-filter: blur(10px); padding: 22px;
+    opacity: 0; pointer-events: none; translate: 0 14px;
+    transition: opacity .18s cubic-bezier(.165,.84,.44,1), translate .18s cubic-bezier(.165,.84,.44,1);
+  }
+  .panel.open { opacity: 1; pointer-events: auto; translate: 0 0; }
+  .panel h2 {
+    font-size: 0.75rem; font-family: var(--mono); font-weight: 400;
+    color: var(--muted); letter-spacing: 0.2em; margin-bottom: 16px;
+  }
+
+  /* identity: fader rail right, personas left */
+  #panel-identity { right: 32px; top: 50%; transform: translateY(-50%); width: 300px; }
+  .fader { display: grid; grid-template-columns: 92px 1fr 44px; gap: 10px; align-items: center; margin: 7px 0; }
+  .fader label { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+  .fader output { font-family: var(--mono); font-size: 0.72rem; text-align: right; color: var(--ink); }
+  .fader output.hot { color: var(--accent); }
+  input[type=range] {
+    -webkit-appearance: none; width: 100%; height: 20px; background: none; cursor: ew-resize;
+  }
+  input[type=range]::-webkit-slider-runnable-track { height: 2px; background: var(--line); }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%;
+    background: var(--ink); margin-top: -5px; border: 0;
+  }
+  input[type=range]:focus-visible::-webkit-slider-thumb { outline: 1px solid var(--accent); outline-offset: 2px; }
+  .identity-actions { display: flex; gap: 8px; margin-top: 18px; }
+  #panel-personas { left: 32px; top: 50%; transform: translateY(-50%); width: 210px; }
+  .chip {
+    display: block; width: 100%; text-align: left; font-family: var(--mono);
+    font-size: 0.78rem; color: var(--ink); background: none;
+    border: 1px solid var(--line); border-radius: 7px; padding: 8px 12px;
+    margin: 6px 0; cursor: pointer; transition: border-color .15s;
+  }
+  .chip:hover { border-color: var(--muted); }
+  .chip.on { border-color: var(--accent); color: var(--accent); }
+
+  /* studio + live share the left column position */
+  #panel-studio, #panel-live { left: 32px; top: 50%; transform: translateY(-50%); width: 330px; }
+  .field { margin: 10px 0; }
+  .field label { display: block; font-family: var(--mono); font-size: 0.7rem; color: var(--muted); margin-bottom: 4px; letter-spacing: 0.08em; }
+  input[type=text], select {
+    width: 100%; background: oklch(0.11 0.02 265); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px;
+    font-family: var(--mono); font-size: 0.78rem;
+  }
+  input[type=text]:focus, select:focus { outline: 1px solid var(--accent); }
+  .toggles { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+  .toggles button {
+    font-family: var(--mono); font-size: 0.7rem; padding: 5px 10px;
+    background: none; color: var(--muted); border: 1px solid var(--line);
+    border-radius: 999px; cursor: pointer;
+  }
+  .toggles button.on { color: var(--accent); border-color: var(--accent); }
+
+  .btn {
+    font-family: var(--mono); font-size: 0.78rem; letter-spacing: 0.06em;
+    padding: 9px 16px; border-radius: 7px; cursor: pointer;
+    background: oklch(0.22 0.03 265); color: var(--ink);
+    border: 1px solid var(--line); transition: border-color .15s;
+  }
+  .btn:hover { border-color: var(--muted); }
+  .btn:focus-visible { outline: 1px solid var(--accent); }
+  .btn.primary { background: var(--accent); color: #061203; border-color: var(--accent); font-weight: 600; }
+  .btn.danger { border-color: var(--danger); color: var(--danger); background: none; }
+  .btn:disabled { opacity: 0.45; cursor: default; }
+
+  /* ---- console ------------------------------------------------- */
+  #console {
+    position: fixed; left: 32px; bottom: 30px; z-index: 3; width: min(520px, 44vw);
+    font-family: var(--mono); font-size: 0.72rem; line-height: 1.7;
+    color: var(--muted); pointer-events: none; white-space: pre-wrap;
+  }
+  #console .warn { color: var(--warn); }
+  #console .ok { color: var(--accent); }
+  #console .err { color: var(--danger); }
+
+  /* ---- scan hint ----------------------------------------------- */
+  #hint {
+    position: fixed; left: 50%; top: 62%; transform: translateX(-50%);
+    z-index: 2; text-align: center; pointer-events: none;
+    transition: opacity .4s;
+  }
+  #hint p { font-family: var(--mono); font-size: 0.75rem; color: var(--muted); letter-spacing: 0.15em; }
+  #hint.gone { opacity: 0; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .panel { transition: opacity .01s, translate 0s; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="stage" aria-hidden="true"></canvas>
+
+<header>
+  <h1>alter<b>ego</b></h1>
+  <p>local studio — nothing here ever leaves this machine</p>
+</header>
+
+<div id="hint"><p>[ scan your face to wake the mirror ]</p></div>
+
+<!-- IDENTITY: knob faders -->
+<section class="panel" id="panel-identity" aria-label="identity designer">
+  <h2>IDENTITY — the eight knobs</h2>
+  <div id="faders"></div>
+  <div class="field"><label for="persona-name">save as (blank = main identity)</label>
+    <input type="text" id="persona-name" placeholder="e.g. host, guest, ceo" spellcheck="false">
+  </div>
+  <div class="identity-actions">
+    <button class="btn" id="btn-scan">Scan face</button>
+    <button class="btn" id="btn-zero">Zero knobs</button>
+    <button class="btn primary" id="btn-save">Save identity</button>
+  </div>
+</section>
+
+<!-- IDENTITY: saved personas -->
+<section class="panel" id="panel-personas" aria-label="saved personas">
+  <h2>PERSONAS</h2>
+  <div id="chips"></div>
+</section>
+
+<!-- STUDIO: run the pipeline -->
+<section class="panel" id="panel-studio" aria-label="process footage">
+  <h2>STUDIO — process a take</h2>
+  <div class="field"><label for="studio-video">footage</label>
+    <select id="studio-video"></select></div>
+  <div class="field"><label for="studio-identities">personas (comma list = multi-person, left→right)</label>
+    <input type="text" id="studio-identities" placeholder="blank = main identity" spellcheck="false"></div>
+  <div class="field"><label for="studio-image">backdrop image/video (optional)</label>
+    <input type="text" id="studio-image" placeholder="e.g. street.jpg" spellcheck="false"></div>
+  <div class="toggles" id="studio-toggles">
+    <button data-flag="night">night</button>
+    <button data-flag="no_fillers">skip fillers</button>
+    <button data-flag="no_voice">skip voice</button>
+    <button data-flag="no_background">skip background</button>
+  </div>
+  <div class="identity-actions">
+    <button class="btn" id="btn-disguise">Disguise only</button>
+    <button class="btn primary" id="btn-ship">Ship it</button>
+  </div>
+</section>
+
+<!-- LIVE -->
+<section class="panel" id="panel-live" aria-label="go live">
+  <h2>LIVE — the mirror, on air</h2>
+  <div class="field"><label for="live-identity">persona</label>
+    <input type="text" id="live-identity" placeholder="blank = main identity" spellcheck="false"></div>
+  <div class="field"><label for="live-image">backdrop (optional)</label>
+    <input type="text" id="live-image" spellcheck="false"></div>
+  <div class="identity-actions">
+    <button class="btn" id="btn-rehearse">Rehearse (window)</button>
+    <button class="btn primary" id="btn-air">Virtual camera</button>
+    <button class="btn danger" id="btn-cut">Cut feed</button>
+  </div>
+</section>
+
+<div id="console" role="log" aria-live="polite"></div>
+
+<nav aria-label="modes">
+  <button data-panel="identity">IDENTITY</button>
+  <button data-panel="studio">STUDIO</button>
+  <button data-panel="live">LIVE</button>
+</nav>
+
+<script type="module" src="/app.js"></script>
+</body>
+</html>
