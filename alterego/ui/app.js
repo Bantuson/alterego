@@ -114,12 +114,16 @@ function graticule() {
 }
 room.add(graticule());
 
-/* Reticle: measurement rings + tick marks around the specimen. */
+/* Reticle: measurement rings + tick marks around the specimen.
+ * Sized so the outermost ticks stay clear of the hint copy below the
+ * face (~0.71 of the viewport half-height), and parented to the SCENE
+ * — not the parallax room — so it tracks the specimen's position
+ * exactly instead of lagging when the face glides aside. */
 function reticle() {
   const group = new THREE.Group();
   const mat = (opacity) => new THREE.LineBasicMaterial({
     color: 0x3d4a75, transparent: true, opacity, fog: false });
-  for (const [radius, opacity] of [[1.55, 0.55], [1.9, 0.3]]) {
+  for (const [radius, opacity] of [[1.15, 0.55], [1.32, 0.3]]) {
     const pts = [];
     for (let i = 0; i <= 128; i++) {
       const a = (i / 128) * Math.PI * 2;
@@ -130,7 +134,7 @@ function reticle() {
   const ticks = [];
   for (let i = 0; i < 72; i++) {
     const a = (i / 72) * Math.PI * 2;
-    const r1 = 1.9, r2 = i % 6 === 0 ? 2.02 : 1.96;
+    const r1 = 1.32, r2 = i % 6 === 0 ? 1.40 : 1.36;
     ticks.push(new THREE.Vector3(Math.cos(a) * r1, Math.sin(a) * r1, 0),
                new THREE.Vector3(Math.cos(a) * r2, Math.sin(a) * r2, 0));
   }
@@ -140,7 +144,7 @@ function reticle() {
   return group;
 }
 const ret = reticle();
-room.add(ret);
+scene.add(ret);
 
 /* ---------- the specimen: real topology, two-layer glow ---------- */
 
@@ -217,12 +221,14 @@ function normalizeScan(pts) {
   const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
   const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
   const span = Math.max(...ys) - Math.min(...ys);
-  const s = 2.5 / span;
+  const s = 2.0 / span; // face height 2.0 units: inside the 1.15 ring
   return pts.map(([x, y, z]) => [(x - cx) * s, -(y - cy) * s, -z * s]);
 }
 
 let maxShiftPx = 0;
+let targetsReady = false;
 function setTargetsFromScan(knobs) {
+  targetsReady = true;
   const source = specimen();
   const { out: displaced, maxShift } = displaceAll(source, knobs);
   maxShiftPx = maxShift;
@@ -262,13 +268,15 @@ resize();
 function animate() {
   const dt = Math.min(clock.getDelta(), 0.05);
   const t = clock.getElapsedTime();
-  for (let i = 0; i < N * 3; i++) {
-    if (reduceMotion) { positions[i] = targets[i]; continue; }
-    const force = -STIFF * (positions[i] - targets[i]) - DAMP * velocities[i];
-    velocities[i] += force * dt;
-    positions[i] += velocities[i] * dt;
+  if (targetsReady) {
+    for (let i = 0; i < N * 3; i++) {
+      if (reduceMotion) { positions[i] = targets[i]; continue; }
+      const force = -STIFF * (positions[i] - targets[i]) - DAMP * velocities[i];
+      velocities[i] += force * dt;
+      positions[i] += velocities[i] * dt;
+    }
+    geometry.attributes.position.needsUpdate = true;
   }
-  geometry.attributes.position.needsUpdate = true;
   /* Glide toward the offset (works with reduced motion too — the
    * position must be honest even when the drift is off). */
   const glide = reduceMotion ? 1 : Math.min(dt * 6, 1);
@@ -514,15 +522,25 @@ $("#btn-cut").addEventListener("click", async () => {
 });
 
 /* Boot. `?demo` = screenshot mode: springs land instantly and the
- * identity panel opens — used for docs and headless visual checks. */
+ * identity panel opens — used for docs and headless visual checks.
+ * The pending image below holds the document's load event ~2.5s so
+ * headless screenshots capture the settled scene, not frame one. */
+if (location.search.includes("demo")) {
+  const hold = new Image();
+  hold.src = "/slow";
+}
+/* The canonical specimen needs no server round-trip: target it NOW so
+ * the face exists from the first frame (the API imports OpenCV on its
+ * first call, which can take seconds on a small machine). */
+setTargetsFromScan(knobState);
+if (location.search.includes("demo")) {
+  show("identity");
+  setKnobs({ jaw_width: 0.8, eye_spacing: -0.6, lip_fullness: 0.5 });
+  for (let i = 0; i < N * 3; i++) { positions[i] = targets[i]; velocities[i] = 0; }
+}
+
 (async () => {
   await Promise.all([loadIdentities(), loadFiles(), liveStatus()]);
-  const haveScan = await scan(true);
-  if (!haveScan) setTargetsFromScan(knobState); // the canonical specimen
+  await scan(true); // replace canonical with the cached real scan, if any
   updateReadouts();
-  if (location.search.includes("demo")) {
-    show("identity");
-    setKnobs({ jaw_width: 0.8, eye_spacing: -0.6, lip_fullness: 0.5 });
-    for (let i = 0; i < N * 3; i++) { positions[i] = targets[i]; velocities[i] = 0; }
-  }
 })();

@@ -251,6 +251,15 @@ class StudioHandler(BaseHTTPRequestHandler):
             except (ConnectionAbortedError, BrokenPipeError):
                 return
 
+        if self.path == "/slow":
+            # Screenshot support: ?demo pages load this as an image,
+            # which HOLDS the browser's load event until the scene has
+            # settled — headless captures then show the real UI.
+            time.sleep(2.5)
+            self.send_response(204)
+            self.end_headers()
+            return
+
         if self.path == "/api/live/status":
             proc = LIVE_PROC["proc"]
             running = proc is not None and proc.poll() is None
