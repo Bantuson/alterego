@@ -245,6 +245,7 @@ function setTargetsFromScan(knobs) {
 const STIFF = 60, DAMP = 12;
 const clock = new THREE.Clock();
 let mouseX = 0, mouseY = 0;
+let faceOffsetTarget = 0; // slides the specimen aside for open panels
 addEventListener("pointermove", (e) => {
   mouseX = (e.clientX / innerWidth - 0.5) * 2;
   mouseY = (e.clientY / innerHeight - 0.5) * 2;
@@ -268,6 +269,11 @@ function animate() {
     positions[i] += velocities[i] * dt;
   }
   geometry.attributes.position.needsUpdate = true;
+  /* Glide toward the offset (works with reduced motion too — the
+   * position must be honest even when the drift is off). */
+  const glide = reduceMotion ? 1 : Math.min(dt * 6, 1);
+  face.position.x += (faceOffsetTarget - face.position.x) * glide;
+  ret.position.x = face.position.x;
   if (!reduceMotion) {
     face.rotation.y = Math.sin(t * 0.1) * 0.22 + mouseX * 0.16;
     face.rotation.x = mouseY * 0.09;
@@ -374,16 +380,17 @@ function setKnobs(values) {
   refreshConstellation();
 }
 
-/* Panels: one open at a time; identity opens its two rails together. */
-const panels = { identity: ["#panel-identity", "#panel-personas"],
-                 studio: ["#panel-studio"], live: ["#panel-live"] };
+/* Panels: one geometry, one open at a time. When a panel is open the
+ * specimen glides left so face and controls never overlap. */
 let open = null;
 function show(name) {
   open = open === name ? null : name;
-  document.querySelectorAll(".panel").forEach(p => p.classList.remove("open"));
+  document.querySelectorAll(".panel").forEach(p =>
+    p.classList.toggle("open", p.id === `panel-${open}`));
   document.querySelectorAll("nav button").forEach(b =>
     b.classList.toggle("on", b.dataset.panel === open));
-  if (open) for (const sel of panels[open]) $(sel).classList.add("open");
+  document.body.classList.toggle("panel-open", !!open);
+  faceOffsetTarget = open ? -0.65 : 0;
 }
 document.querySelectorAll("nav button").forEach(b =>
   b.addEventListener("click", () => show(b.dataset.panel)));

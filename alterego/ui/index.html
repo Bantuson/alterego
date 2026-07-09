@@ -7,15 +7,26 @@
 <style>
   :root {
     --bg: oklch(0.13 0.02 265);
-    --surface: oklch(0.17 0.025 265 / 0.9);
+    --surface: oklch(0.17 0.025 265 / 0.97);
+    --field: oklch(0.11 0.02 265);
     --line: oklch(0.32 0.03 265);
     --ink: oklch(0.94 0.01 265);
     --muted: oklch(0.74 0.02 265);
-    --accent: #39E508;
+    /* Semantic accents — each color is a MEANING, not a decoration:
+       action = you can press/select it     (ice cyan)
+       data   = measured change, truthful   (the brand green)
+       warn   = attention, pinned           (amber)
+       live   = on air / irreversible now   (signal red)      */
+    --action: oklch(0.84 0.11 220);
+    --action-ink: oklch(0.2 0.06 240);
+    --data: #39E508;
     --warn: #ffb347;
-    --danger: #ff6b6b;
+    --live: #ff5d68;
     --mono: "Cascadia Code", Consolas, ui-monospace, monospace;
     --sans: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+    /* Layout zones: everything respects these, nothing overlaps. */
+    --zone-top: 96px;
+    --zone-bottom: 96px;
   }
   * { box-sizing: border-box; margin: 0; }
   html, body { height: 100%; overflow: hidden; }
@@ -25,108 +36,108 @@
   }
   #stage { position: fixed; inset: 0; display: block; }
 
-  /* ---- wordmark + pledge --------------------------------------- */
-  header { position: fixed; top: 30px; left: 36px; z-index: 3; pointer-events: none; user-select: none; }
-  header h1 {
-    font-weight: 200; font-size: 2rem; letter-spacing: 0.42em;
-    text-transform: lowercase; line-height: 1;
-  }
-  header h1 b { font-weight: 700; color: var(--accent); }
-  header p {
-    font-family: var(--mono); font-size: 0.72rem; color: var(--muted);
-    margin-top: 10px; letter-spacing: 0.06em;
-  }
+  /* ---- top zone: wordmark left, readouts right ------------------- */
+  header { position: fixed; top: 28px; left: 36px; z-index: 6; pointer-events: none; user-select: none; }
+  header h1 { font-weight: 200; font-size: 1.9rem; letter-spacing: 0.42em; text-transform: lowercase; line-height: 1; }
+  header h1 b { font-weight: 700; color: var(--action); }
+  header p { font-family: var(--mono); font-size: 0.7rem; color: var(--muted); margin-top: 9px; letter-spacing: 0.06em; }
 
-  /* ---- instrument readouts (top-right) -------------------------- */
   #readouts {
-    position: fixed; top: 38px; right: 36px; z-index: 5; display: flex; gap: 22px;
+    position: fixed; top: 36px; right: 36px; z-index: 6; display: flex; gap: 22px;
     font-family: var(--mono); font-size: 0.72rem; color: var(--muted);
     letter-spacing: 0.08em; user-select: none; pointer-events: none;
   }
   #readouts span { color: var(--ink); }
-  #readouts span.on { color: var(--accent); }
+  #readouts span.on { color: var(--data); }
 
-  /* ---- the dock -------------------------------------------------- */
+  /* ---- bottom zone: console left, dock center, hint above dock --- */
   nav {
-    position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%);
-    z-index: 4; display: flex; gap: 2px; padding: 4px;
-    background: var(--surface); border: 1px solid var(--line);
-    border-radius: 11px; backdrop-filter: blur(10px);
+    position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
+    z-index: 6; display: flex; gap: 2px; padding: 4px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 11px;
   }
   nav button {
     font-family: var(--mono); font-size: 0.8rem; letter-spacing: 0.16em;
     background: none; border: 0; color: var(--muted); cursor: pointer;
-    padding: 11px 26px; border-radius: 8px; transition: color .18s, background .18s;
+    padding: 11px 26px; border-radius: 8px; transition: color .15s, background .15s;
   }
   nav button:hover { color: var(--ink); }
-  nav button:focus-visible { outline: 1px solid var(--accent); }
-  nav button.on { color: #061203; background: var(--accent); font-weight: 700; }
+  nav button:focus-visible { outline: 1px solid var(--action); }
+  nav button.on { color: var(--action-ink); background: var(--action); font-weight: 700; }
 
-  /* ---- panels ---------------------------------------------------- */
+  #console {
+    position: fixed; left: 36px; bottom: 28px; z-index: 5;
+    width: min(480px, 38vw); max-height: 34vh; overflow: hidden;
+    display: flex; flex-direction: column; justify-content: flex-end;
+    font-family: var(--mono); font-size: 0.73rem; line-height: 1.75;
+    color: var(--muted); pointer-events: none; white-space: pre-wrap;
+  }
+  #console .warn { color: var(--warn); }
+  #console .ok { color: var(--data); }
+  #console .err { color: var(--live); }
+
+  #hint {
+    position: fixed; left: 50%; bottom: calc(var(--zone-bottom) - 8px);
+    transform: translateX(-50%); z-index: 2; text-align: center;
+    pointer-events: none; transition: opacity .3s;
+  }
+  #hint p { font-family: var(--mono); font-size: 0.75rem; color: var(--muted); letter-spacing: 0.2em; }
+  #hint p b { color: var(--ink); font-weight: 600; }
+  #hint.gone, body.panel-open #hint { opacity: 0; }
+
+  /* ---- panels: ONE geometry for every mode ----------------------- */
+  /* Right rail, pinned between the top and bottom zones. Content
+     scrolls inside; buttons can never leave the screen. */
   .panel {
-    position: fixed; z-index: 3; background: var(--surface);
-    border: 1px solid var(--line); border-radius: 12px;
-    backdrop-filter: blur(12px); padding: 26px;
-    opacity: 0; pointer-events: none; translate: 0 14px;
-    transition: opacity .18s cubic-bezier(.165,.84,.44,1), translate .18s cubic-bezier(.165,.84,.44,1);
+    position: fixed; z-index: 4;
+    top: var(--zone-top); bottom: var(--zone-bottom); right: 36px;
+    width: min(372px, calc(100vw - 72px));
+    display: flex; flex-direction: column;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+    opacity: 0; pointer-events: none; translate: 14px 0;
+    transition: opacity .16s cubic-bezier(.165,.84,.44,1), translate .16s cubic-bezier(.165,.84,.44,1);
   }
   .panel.open { opacity: 1; pointer-events: auto; translate: 0 0; }
   .panel h2 {
-    font-size: 1.05rem; font-weight: 650; letter-spacing: 0.01em;
-    padding-bottom: 12px; margin-bottom: 16px;
-    border-bottom: 1px solid var(--line);
+    flex: 0 0 auto; font-size: 1.02rem; font-weight: 650; letter-spacing: 0.01em;
+    padding: 20px 24px 12px; border-bottom: 1px solid var(--line);
   }
   .panel h2 small {
     display: block; font-family: var(--mono); font-weight: 400;
-    font-size: 0.68rem; color: var(--muted); letter-spacing: 0.1em; margin-top: 3px;
+    font-size: 0.66rem; color: var(--muted); letter-spacing: 0.1em; margin-top: 3px;
+  }
+  .panel-body { flex: 1 1 auto; overflow-y: auto; padding: 16px 24px; min-height: 0; }
+  .panel-body::-webkit-scrollbar { width: 8px; }
+  .panel-body::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+  .panel-foot {
+    flex: 0 0 auto; display: flex; gap: 8px;
+    padding: 14px 24px 20px; border-top: 1px solid var(--line);
   }
 
-  /* ---- the mixing desk (identity faders) ------------------------ */
-  #panel-identity { right: 36px; top: 50%; transform: translateY(-50%); width: 344px; }
-  .knob { margin: 13px 0; }
-  .knob-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 7px; }
-  .knob-label { font-size: 0.82rem; font-weight: 550; color: var(--ink); text-transform: capitalize; }
-  .knob-value {
-    font-family: var(--mono); font-size: 1.02rem; color: var(--muted);
-    font-weight: 600; transition: color .12s;
-  }
-  .knob-value.hot { color: var(--accent); }
-  .meter {
-    position: relative; height: 22px; cursor: ew-resize; touch-action: none;
-    border-radius: 4px;
-  }
-  .meter::before {  /* track */
-    content: ""; position: absolute; left: 0; right: 0; top: 10px; height: 2px;
-    background: var(--line);
-  }
-  .meter-notch {
-    position: absolute; left: 50%; top: 5px; width: 1px; height: 12px;
-    background: var(--muted); opacity: 0.6;
-  }
-  .meter-fill {
-    position: absolute; top: 9px; height: 4px; border-radius: 2px;
-    background: var(--muted); opacity: 0.65;
-  }
-  .meter-fill.hot { background: var(--accent); opacity: 1; }
-  .meter-thumb {
-    position: absolute; top: 3px; width: 3px; height: 16px; border-radius: 1.5px;
-    background: var(--ink); transform: translateX(-50%); left: 50%;
-  }
-  .meter:focus-visible { outline: 1px solid var(--accent); outline-offset: 3px; }
+  /* ---- the mixing desk ------------------------------------------- */
+  .knob { margin: 11px 0; }
+  .knob-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px; }
+  .knob-label { font-size: 0.82rem; font-weight: 550; text-transform: capitalize; }
+  .knob-value { font-family: var(--mono); font-size: 1rem; color: var(--muted); font-weight: 600; transition: color .12s; }
+  .knob-value.hot { color: var(--data); }
+  .meter { position: relative; height: 22px; cursor: ew-resize; touch-action: none; border-radius: 4px; }
+  .meter::before { content: ""; position: absolute; left: 0; right: 0; top: 10px; height: 2px; background: var(--line); }
+  .meter-notch { position: absolute; left: 50%; top: 5px; width: 1px; height: 12px; background: var(--muted); opacity: 0.6; }
+  .meter-fill { position: absolute; top: 9px; height: 4px; border-radius: 2px; background: var(--muted); opacity: 0.65; }
+  .meter-fill.hot { background: var(--data); opacity: 1; }
+  .meter-thumb { position: absolute; top: 3px; width: 3px; height: 16px; border-radius: 1.5px; background: var(--ink); transform: translateX(-50%); left: 50%; }
+  .meter:focus-visible { outline: 1px solid var(--action); outline-offset: 3px; }
 
-  .field { margin: 14px 0; }
-  .field label {
-    display: block; font-family: var(--mono); font-size: 0.7rem;
-    color: var(--muted); margin-bottom: 5px; letter-spacing: 0.08em;
-  }
+  /* ---- shared controls -------------------------------------------- */
+  .field { margin: 13px 0; }
+  .field label { display: block; font-family: var(--mono); font-size: 0.68rem; color: var(--muted); margin-bottom: 5px; letter-spacing: 0.08em; }
   input[type=text], select {
-    width: 100%; background: oklch(0.11 0.02 265); color: var(--ink);
+    width: 100%; background: var(--field); color: var(--ink);
     border: 1px solid var(--line); border-radius: 7px; padding: 9px 11px;
     font-family: var(--mono); font-size: 0.8rem;
   }
-  input[type=text]:focus, select:focus { outline: 1px solid var(--accent); }
+  input[type=text]:focus, select:focus { outline: 1px solid var(--action); }
 
-  .actions { display: flex; gap: 8px; margin-top: 20px; }
   .btn {
     flex: 1; font-family: var(--mono); font-size: 0.78rem; letter-spacing: 0.04em;
     padding: 11px 10px; border-radius: 8px; cursor: pointer; white-space: nowrap;
@@ -134,53 +145,31 @@
     border: 1px solid var(--line); transition: border-color .15s;
   }
   .btn:hover { border-color: var(--muted); }
-  .btn:focus-visible { outline: 1px solid var(--accent); }
-  .btn.primary { background: var(--accent); color: #061203; border-color: var(--accent); font-weight: 700; }
-  .btn.danger { border-color: var(--danger); color: var(--danger); background: none; flex: 0 1 auto; }
+  .btn:focus-visible { outline: 1px solid var(--action); }
+  .btn.primary { background: var(--action); color: var(--action-ink); border-color: var(--action); font-weight: 700; }
+  .btn.onair { background: var(--live); color: #2b0508; border-color: var(--live); font-weight: 700; }
+  .btn.danger { border-color: var(--live); color: var(--live); background: none; flex: 0 1 auto; }
   .btn:disabled { opacity: 0.4; cursor: default; }
 
-  /* personas rail */
-  #panel-personas { left: 36px; top: 50%; transform: translateY(-50%); width: 224px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; }
   .chip {
-    display: block; width: 100%; text-align: left; font-family: var(--mono);
-    font-size: 0.8rem; color: var(--ink); background: none;
-    border: 1px solid var(--line); border-radius: 8px; padding: 10px 13px;
-    margin: 7px 0; cursor: pointer; transition: border-color .15s;
+    font-family: var(--mono); font-size: 0.76rem; color: var(--ink);
+    background: none; border: 1px solid var(--line); border-radius: 999px;
+    padding: 6px 13px; cursor: pointer; transition: border-color .15s, color .15s;
   }
   .chip:hover { border-color: var(--muted); }
-  .chip.on { border-color: var(--accent); color: var(--accent); }
+  .chip.on { border-color: var(--action); color: var(--action); }
   .empty { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
 
-  #panel-studio, #panel-live { left: 36px; top: 50%; transform: translateY(-50%); width: 348px; }
-  .toggles { display: flex; flex-wrap: wrap; gap: 7px; margin: 14px 0 4px; }
+  .toggles { display: flex; flex-wrap: wrap; gap: 7px; margin: 13px 0 4px; }
   .toggles button {
     font-family: var(--mono); font-size: 0.72rem; padding: 6px 12px;
     background: none; color: var(--muted); border: 1px solid var(--line);
     border-radius: 999px; cursor: pointer;
   }
-  .toggles button.on { color: var(--accent); border-color: var(--accent); }
+  .toggles button.on { color: var(--action); border-color: var(--action); }
 
-  /* ---- console --------------------------------------------------- */
-  #console {
-    position: fixed; left: 36px; bottom: 32px; z-index: 3; width: min(520px, 42vw);
-    font-family: var(--mono); font-size: 0.73rem; line-height: 1.75;
-    color: var(--muted); pointer-events: none; white-space: pre-wrap;
-  }
-  #console .warn { color: var(--warn); }
-  #console .ok { color: var(--accent); }
-  #console .err { color: var(--danger); }
-
-  /* ---- scan hint ------------------------------------------------- */
-  #hint {
-    position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%);
-    z-index: 2; text-align: center; pointer-events: none; transition: opacity .4s;
-  }
-  #hint p {
-    font-family: var(--mono); font-size: 0.78rem; color: var(--muted);
-    letter-spacing: 0.22em;
-  }
-  #hint p b { color: var(--ink); font-weight: 600; }
-  #hint.gone { opacity: 0; }
+  hr.rule { border: 0; border-top: 1px solid var(--line); margin: 16px 0; }
 
   @media (prefers-reduced-motion: reduce) {
     .panel { transition: opacity .01s, translate 0s; }
@@ -198,49 +187,49 @@
 
 <div id="readouts" aria-hidden="true">
   <div>LANDMARKS <span>478</span></div>
-  <div>SIGNAL <span id="ro-signal">NONE</span></div>
+  <div>SIGNAL <span id="ro-signal">CANONICAL</span></div>
   <div>MAX SHIFT <span id="ro-shift">—</span></div>
   <div>PERSONAS <span id="ro-personas">0</span></div>
 </div>
 
 <div id="hint"><p>CANONICAL SPECIMEN — open <b>IDENTITY</b> and scan to make it you</p></div>
 
-<!-- IDENTITY: the mixing desk -->
+<!-- IDENTITY -->
 <section class="panel" id="panel-identity" aria-label="identity designer">
-  <h2>Identity<small>EIGHT KNOBS · DRAG, DOUBLE-CLICK TO ZERO</small></h2>
-  <div id="faders"></div>
-  <div class="field"><label for="persona-name">SAVE AS — blank = main identity</label>
-    <input type="text" id="persona-name" placeholder="host, guest, ceo…" spellcheck="false">
+  <h2>Identity<small>PERSONAS · EIGHT KNOBS · DOUBLE-CLICK A KNOB TO ZERO</small></h2>
+  <div class="panel-body">
+    <div class="chips" id="chips"></div>
+    <hr class="rule">
+    <div id="faders"></div>
+    <div class="field"><label for="persona-name">SAVE AS — blank = main identity</label>
+      <input type="text" id="persona-name" placeholder="host, guest, ceo…" spellcheck="false">
+    </div>
   </div>
-  <div class="actions">
+  <div class="panel-foot">
     <button class="btn" id="btn-scan">Scan face</button>
     <button class="btn" id="btn-zero">Zero all</button>
     <button class="btn primary" id="btn-save">Save identity</button>
   </div>
 </section>
 
-<!-- IDENTITY: saved personas -->
-<section class="panel" id="panel-personas" aria-label="saved personas">
-  <h2>Personas<small>CLICK TO LOAD INTO THE DESK</small></h2>
-  <div id="chips"></div>
-</section>
-
 <!-- STUDIO -->
 <section class="panel" id="panel-studio" aria-label="process footage">
   <h2>Studio<small>RAW TAKE → SHIPPED VIDEO</small></h2>
-  <div class="field"><label for="studio-video">FOOTAGE</label>
-    <select id="studio-video"></select></div>
-  <div class="field"><label for="studio-identities">PERSONAS — comma list = multi-person, left→right</label>
-    <input type="text" id="studio-identities" placeholder="blank = main identity" spellcheck="false"></div>
-  <div class="field"><label for="studio-image">BACKDROP IMAGE/VIDEO — optional</label>
-    <input type="text" id="studio-image" placeholder="street.jpg" spellcheck="false"></div>
-  <div class="toggles" id="studio-toggles">
-    <button data-flag="night">night</button>
-    <button data-flag="no_fillers">skip fillers</button>
-    <button data-flag="no_voice">skip voice</button>
-    <button data-flag="no_background">skip background</button>
+  <div class="panel-body">
+    <div class="field"><label for="studio-video">FOOTAGE</label>
+      <select id="studio-video"></select></div>
+    <div class="field"><label for="studio-identities">PERSONAS — comma list = multi-person, left→right</label>
+      <input type="text" id="studio-identities" placeholder="blank = main identity" spellcheck="false"></div>
+    <div class="field"><label for="studio-image">BACKDROP IMAGE/VIDEO — optional</label>
+      <input type="text" id="studio-image" placeholder="street.jpg" spellcheck="false"></div>
+    <div class="toggles" id="studio-toggles">
+      <button data-flag="night">night</button>
+      <button data-flag="no_fillers">skip fillers</button>
+      <button data-flag="no_voice">skip voice</button>
+      <button data-flag="no_background">skip background</button>
+    </div>
   </div>
-  <div class="actions">
+  <div class="panel-foot">
     <button class="btn" id="btn-disguise">Disguise only</button>
     <button class="btn primary" id="btn-ship">Ship it</button>
   </div>
@@ -249,13 +238,15 @@
 <!-- LIVE -->
 <section class="panel" id="panel-live" aria-label="go live">
   <h2>Live<small>THE MIRROR, ON AIR — FAILS CLOSED</small></h2>
-  <div class="field"><label for="live-identity">PERSONA</label>
-    <input type="text" id="live-identity" placeholder="blank = main identity" spellcheck="false"></div>
-  <div class="field"><label for="live-image">BACKDROP — optional</label>
-    <input type="text" id="live-image" spellcheck="false"></div>
-  <div class="actions">
+  <div class="panel-body">
+    <div class="field"><label for="live-identity">PERSONA</label>
+      <input type="text" id="live-identity" placeholder="blank = main identity" spellcheck="false"></div>
+    <div class="field"><label for="live-image">BACKDROP — optional</label>
+      <input type="text" id="live-image" spellcheck="false"></div>
+  </div>
+  <div class="panel-foot">
     <button class="btn" id="btn-rehearse">Rehearse</button>
-    <button class="btn primary" id="btn-air">Go live</button>
+    <button class="btn onair" id="btn-air">Go live</button>
     <button class="btn danger" id="btn-cut">Cut</button>
   </div>
 </section>
