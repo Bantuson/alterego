@@ -99,6 +99,17 @@ uv run alterego design --jaw 0.5 --save                # skip preview, save now
 uv run alterego design --like reference.jpg
 ```
 
+**Named personas (multi-character work):** add `--name` to save into
+`identities/<name>.json` instead of the default file:
+
+```powershell
+uv run alterego design --name host --jaw 0.6 --save
+uv run alterego design --name guest --like portrait.jpg
+```
+
+Any command that takes `--identity <name>` uses that persona. Back up
+the whole `identities/` folder along with `alterego.json`.
+
 Rules that keep you safe:
 
 - **Same identity in every video, forever.** Consistency is the brand;
@@ -107,6 +118,10 @@ Rules that keep you safe:
   naturalness budget — it cannot make you look like that person. Use
   AI-generated portraits as references, not real people.
 - Redesigning your face never changes your voice (separate voice seed).
+- **Characters, not deception.** Playing recurring personas is
+  entertainment with deep precedent. Presenting personas as
+  independent real people to manufacture credibility is the line this
+  tool asks you not to cross.
 
 ---
 
@@ -173,6 +188,51 @@ Tuning knobs you'll actually touch:
 Backdrops: `--image` takes a photo **or a video** (a looping street
 plate). Order matters: background before enhance — a shared grade is
 what visually glues a composite together.
+
+### Multi-person shots (podcast) and multi-persona shoots
+
+**Two people, one frame** — each person wears their own identity:
+
+```powershell
+uv run alterego disguise podcast.mp4 --identity host --identity guest
+```
+
+The first `--identity` is the LEFTMOST person; faces are tracked
+across frames so identities stick even through brief drop-outs, and
+coverage is reported per person. Two rules make it reliable:
+
+1. **Record one audio track per person** (lapel mics, or each side of
+   a call). A shared room mic mixes the voices and one pitch shift
+   would move both identically. Shift each track with its owner's
+   persona (`voice --identity host`), then remix.
+2. Seated framing works best. If two people fully cross paths while
+   both are hidden, identities can swap — position is the only cue
+   (embedding re-ID is roadmapped). Review the output.
+
+**One creator, many characters:** film each take separately and ship
+each with a different persona — `ship take1.mp4 --identity host`,
+`ship take2.mp4 --identity skeptic` — then cut them together. Same
+personas every episode.
+
+### The studio (web UI)
+
+```powershell
+uv run alterego studio        # opens http://127.0.0.1:4700 (local only)
+```
+
+One dark page, three modes from the bottom dock:
+
+- **IDENTITY** — scan your face once (cached locally, gitignored) and
+  it becomes a 3D constellation; the eight faders morph it using the
+  SAME math as the real disguise, with points glowing green exactly
+  where pixels will move. Name + save personas.
+- **STUDIO** — pick a recording, choose personas (comma list for
+  multi-person), toggle flags, run Ship/Disguise; the pipeline's real
+  output streams into the on-page console.
+- **LIVE** — start/stop rehearsal or the virtual camera.
+
+Everything the studio does goes through the same CLI you'd type; it
+can never do anything a terminal user couldn't.
 
 ### The branded clip
 
