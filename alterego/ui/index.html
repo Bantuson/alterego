@@ -12,11 +12,8 @@
     --line: oklch(0.32 0.03 265);
     --ink: oklch(0.94 0.01 265);
     --muted: oklch(0.74 0.02 265);
-    /* Semantic accents — each color is a MEANING, not a decoration:
-       action = you can press/select it     (ice cyan)
-       data   = measured change, truthful   (the brand green)
-       warn   = attention, pinned           (amber)
-       live   = on air / irreversible now   (signal red)      */
+    /* Semantic accents: action=press/select · data=measured change ·
+       warn=attention · live=on air / irreversible                    */
     --action: oklch(0.84 0.11 220);
     --action-ink: oklch(0.2 0.06 240);
     --data: #39E508;
@@ -24,97 +21,115 @@
     --live: #ff5d68;
     --mono: "Cascadia Code", Consolas, ui-monospace, monospace;
     --sans: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
-    /* Layout zones: everything respects these, nothing overlaps. */
     --zone-top: 96px;
     --zone-bottom: 96px;
   }
   * { box-sizing: border-box; margin: 0; }
   html, body { height: 100%; overflow: hidden; }
-  body {
-    background: var(--bg); color: var(--ink);
-    font-family: var(--sans); font-size: 14px; line-height: 1.5;
-  }
-  #stage { position: fixed; inset: 0; display: block; }
+  body { background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 14px; line-height: 1.5; }
 
-  /* ---- top zone: wordmark left, readouts right ------------------- */
+  #stage { position: fixed; inset: 0; display: block; transition: opacity .35s; }
+  body[data-mirror="on"] #stage { opacity: 0.22; }
+
+  /* ---- the mirror: your real camera, disguised ------------------- */
+  #mirror-wrap {
+    position: fixed; z-index: 3; top: var(--zone-top); bottom: var(--zone-bottom);
+    left: 36px; right: 444px; display: none; align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  body[data-mirror="on"] #mirror-wrap { display: flex; }
+  #mirror-frame { position: relative; }
+  #mirror {
+    display: block; max-height: calc(100vh - var(--zone-top) - var(--zone-bottom) - 24px);
+    max-width: 100%; border: 1px solid var(--line); border-radius: 10px;
+    background: var(--field);
+  }
+  #mirror-frame::after {  /* the instrument's corner brackets */
+    content: ""; position: absolute; inset: -7px; border-radius: 12px;
+    border: 1px solid var(--line); opacity: 0.5;
+    -webkit-mask: linear-gradient(#000 0 0) top left / 26px 26px no-repeat,
+                  linear-gradient(#000 0 0) top right / 26px 26px no-repeat,
+                  linear-gradient(#000 0 0) bottom left / 26px 26px no-repeat,
+                  linear-gradient(#000 0 0) bottom right / 26px 26px no-repeat;
+  }
+  #mirror-tag {
+    position: absolute; top: -30px; left: 0; font-family: var(--mono);
+    font-size: 0.7rem; letter-spacing: 0.18em; color: var(--muted);
+  }
+  #mirror-tag b { color: var(--data); font-weight: 600; }
+
+  /* ---- top zone --------------------------------------------------- */
   header { position: fixed; top: 28px; left: 36px; z-index: 6; pointer-events: none; user-select: none; }
   header h1 { font-weight: 200; font-size: 1.9rem; letter-spacing: 0.42em; text-transform: lowercase; line-height: 1; }
   header h1 b { font-weight: 700; color: var(--action); }
   header p { font-family: var(--mono); font-size: 0.7rem; color: var(--muted); margin-top: 9px; letter-spacing: 0.06em; }
 
-  #readouts {
-    position: fixed; top: 36px; right: 36px; z-index: 6; display: flex; gap: 22px;
-    font-family: var(--mono); font-size: 0.72rem; color: var(--muted);
-    letter-spacing: 0.08em; user-select: none; pointer-events: none;
-  }
+  #readouts { position: fixed; top: 36px; right: 36px; z-index: 6; display: flex; gap: 22px;
+    font-family: var(--mono); font-size: 0.72rem; color: var(--muted); letter-spacing: 0.08em;
+    user-select: none; pointer-events: none; }
   #readouts span { color: var(--ink); }
   #readouts span.on { color: var(--data); }
+  #readouts span.air { color: var(--live); }
 
-  /* ---- bottom zone: console left, dock center, hint above dock --- */
-  nav {
-    position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
-    z-index: 6; display: flex; gap: 2px; padding: 4px;
-    background: var(--surface); border: 1px solid var(--line); border-radius: 11px;
+  /* ---- setup (first run) ------------------------------------------ */
+  #setup {
+    position: fixed; top: var(--zone-top); left: 36px; z-index: 6; width: 300px;
+    display: none; font-family: var(--mono);
   }
-  nav button {
-    font-family: var(--mono); font-size: 0.8rem; letter-spacing: 0.16em;
+  body[data-setup="on"] #setup { display: block; }
+  body[data-setup="on"] nav { display: none; }
+  #setup .step { display: flex; gap: 14px; margin: 0 0 22px; opacity: 0.45; transition: opacity .3s; }
+  #setup .step.now { opacity: 1; }
+  #setup .step-no { font-size: 0.72rem; color: var(--action); padding-top: 2px; }
+  #setup .step.done .step-no { color: var(--data); }
+  #setup h3 { font-family: var(--sans); font-size: 0.95rem; font-weight: 650; }
+  #setup p { font-size: 0.72rem; color: var(--muted); line-height: 1.7; margin-top: 3px; }
+
+  /* ---- bottom zone ------------------------------------------------- */
+  nav { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); z-index: 6;
+    display: flex; gap: 2px; padding: 4px; background: var(--surface);
+    border: 1px solid var(--line); border-radius: 11px; }
+  nav button { font-family: var(--mono); font-size: 0.8rem; letter-spacing: 0.16em;
     background: none; border: 0; color: var(--muted); cursor: pointer;
-    padding: 11px 26px; border-radius: 8px; transition: color .15s, background .15s;
-  }
+    padding: 11px 26px; border-radius: 8px; transition: color .15s, background .15s; }
   nav button:hover { color: var(--ink); }
   nav button:focus-visible { outline: 1px solid var(--action); }
   nav button.on { color: var(--action-ink); background: var(--action); font-weight: 700; }
 
-  #console {
-    position: fixed; left: 36px; bottom: 28px; z-index: 5;
-    width: min(480px, 38vw); max-height: 34vh; overflow: hidden;
+  #console { position: fixed; left: 36px; bottom: 28px; z-index: 5;
+    width: min(440px, 34vw); max-height: 30vh; overflow: hidden;
     display: flex; flex-direction: column; justify-content: flex-end;
     font-family: var(--mono); font-size: 0.73rem; line-height: 1.75;
-    color: var(--muted); pointer-events: none; white-space: pre-wrap;
-  }
+    color: var(--muted); pointer-events: none; white-space: pre-wrap; }
   #console .warn { color: var(--warn); }
   #console .ok { color: var(--data); }
   #console .err { color: var(--live); }
 
-  #hint {
-    position: fixed; left: 50%; bottom: calc(var(--zone-bottom) - 8px);
-    transform: translateX(-50%); z-index: 2; text-align: center;
-    pointer-events: none; transition: opacity .3s;
-  }
+  #hint { position: fixed; left: 50%; bottom: calc(var(--zone-bottom) - 8px);
+    transform: translateX(-50%); z-index: 2; text-align: center; pointer-events: none;
+    transition: opacity .3s; }
   #hint p { font-family: var(--mono); font-size: 0.75rem; color: var(--muted); letter-spacing: 0.2em; }
   #hint p b { color: var(--ink); font-weight: 600; }
-  #hint.gone, body.panel-open #hint { opacity: 0; }
+  #hint.gone, body.panel-open #hint, body[data-mirror="on"] #hint { opacity: 0; }
 
-  /* ---- panels: ONE geometry for every mode ----------------------- */
-  /* Right rail, pinned between the top and bottom zones. Content
-     scrolls inside; buttons can never leave the screen. */
-  .panel {
-    position: fixed; z-index: 4;
-    top: var(--zone-top); bottom: var(--zone-bottom); right: 36px;
-    width: min(372px, calc(100vw - 72px));
+  /* ---- panels ------------------------------------------------------ */
+  .panel { position: fixed; z-index: 4; top: var(--zone-top); bottom: var(--zone-bottom);
+    right: 36px; width: min(384px, calc(100vw - 72px));
     display: flex; flex-direction: column;
     background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
     opacity: 0; pointer-events: none; translate: 14px 0;
-    transition: opacity .16s cubic-bezier(.165,.84,.44,1), translate .16s cubic-bezier(.165,.84,.44,1);
-  }
+    transition: opacity .16s cubic-bezier(.165,.84,.44,1), translate .16s cubic-bezier(.165,.84,.44,1); }
   .panel.open { opacity: 1; pointer-events: auto; translate: 0 0; }
-  .panel h2 {
-    flex: 0 0 auto; font-size: 1.02rem; font-weight: 650; letter-spacing: 0.01em;
-    padding: 20px 24px 12px; border-bottom: 1px solid var(--line);
-  }
-  .panel h2 small {
-    display: block; font-family: var(--mono); font-weight: 400;
-    font-size: 0.66rem; color: var(--muted); letter-spacing: 0.1em; margin-top: 3px;
-  }
+  .panel h2 { flex: 0 0 auto; font-size: 1.02rem; font-weight: 650; letter-spacing: 0.01em;
+    padding: 20px 24px 12px; border-bottom: 1px solid var(--line); }
+  .panel h2 small { display: block; font-family: var(--mono); font-weight: 400;
+    font-size: 0.66rem; color: var(--muted); letter-spacing: 0.1em; margin-top: 3px; }
   .panel-body { flex: 1 1 auto; overflow-y: auto; padding: 16px 24px; min-height: 0; }
   .panel-body::-webkit-scrollbar { width: 8px; }
   .panel-body::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
-  .panel-foot {
-    flex: 0 0 auto; display: flex; gap: 8px;
-    padding: 14px 24px 20px; border-top: 1px solid var(--line);
-  }
+  .panel-foot { flex: 0 0 auto; display: flex; gap: 8px; padding: 14px 24px 20px; border-top: 1px solid var(--line); }
 
-  /* ---- the mixing desk ------------------------------------------- */
+  /* ---- the mixing desk --------------------------------------------- */
   .knob { margin: 11px 0; }
   .knob-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px; }
   .knob-label { font-size: 0.82rem; font-weight: 550; text-transform: capitalize; }
@@ -125,60 +140,95 @@
   .meter-notch { position: absolute; left: 50%; top: 5px; width: 1px; height: 12px; background: var(--muted); opacity: 0.6; }
   .meter-fill { position: absolute; top: 9px; height: 4px; border-radius: 2px; background: var(--muted); opacity: 0.65; }
   .meter-fill.hot { background: var(--data); opacity: 1; }
-  .meter-thumb { position: absolute; top: 3px; width: 3px; height: 16px; border-radius: 1.5px; background: var(--ink); transform: translateX(-50%); left: 50%; }
+  .meter-thumb { position: absolute; top: 3px; width: 3px; height: 16px; border-radius: 1.5px;
+    background: var(--ink); transform: translateX(-50%); left: 50%; }
   .meter:focus-visible { outline: 1px solid var(--action); outline-offset: 3px; }
 
-  /* ---- shared controls -------------------------------------------- */
+  /* ---- shared controls --------------------------------------------- */
   .field { margin: 13px 0; }
-  .field label { display: block; font-family: var(--mono); font-size: 0.68rem; color: var(--muted); margin-bottom: 5px; letter-spacing: 0.08em; }
-  input[type=text], select {
-    width: 100%; background: var(--field); color: var(--ink);
+  .field label { display: block; font-family: var(--mono); font-size: 0.68rem; color: var(--muted);
+    margin-bottom: 5px; letter-spacing: 0.08em; }
+  input[type=text] { width: 100%; background: var(--field); color: var(--ink);
     border: 1px solid var(--line); border-radius: 7px; padding: 9px 11px;
-    font-family: var(--mono); font-size: 0.8rem;
-  }
-  input[type=text]:focus, select:focus { outline: 1px solid var(--action); }
+    font-family: var(--mono); font-size: 0.8rem; }
+  input[type=text]:focus { outline: 1px solid var(--action); }
 
-  .btn {
-    flex: 1; font-family: var(--mono); font-size: 0.78rem; letter-spacing: 0.04em;
+  .btn { flex: 1; font-family: var(--mono); font-size: 0.78rem; letter-spacing: 0.04em;
     padding: 11px 10px; border-radius: 8px; cursor: pointer; white-space: nowrap;
-    background: oklch(0.22 0.03 265); color: var(--ink);
-    border: 1px solid var(--line); transition: border-color .15s;
-  }
+    background: oklch(0.22 0.03 265); color: var(--ink); border: 1px solid var(--line);
+    transition: border-color .15s; }
   .btn:hover { border-color: var(--muted); }
   .btn:focus-visible { outline: 1px solid var(--action); }
   .btn.primary { background: var(--action); color: var(--action-ink); border-color: var(--action); font-weight: 700; }
   .btn.onair { background: var(--live); color: #2b0508; border-color: var(--live); font-weight: 700; }
   .btn.danger { border-color: var(--live); color: var(--live); background: none; flex: 0 1 auto; }
   .btn:disabled { opacity: 0.4; cursor: default; }
+  .btn.ghost { background: none; }
 
   .chips { display: flex; flex-wrap: wrap; gap: 7px; }
-  .chip {
-    font-family: var(--mono); font-size: 0.76rem; color: var(--ink);
-    background: none; border: 1px solid var(--line); border-radius: 999px;
-    padding: 6px 13px; cursor: pointer; transition: border-color .15s, color .15s;
-  }
+  .chip { font-family: var(--mono); font-size: 0.76rem; color: var(--ink); background: none;
+    border: 1px solid var(--line); border-radius: 999px; padding: 6px 13px; cursor: pointer;
+    transition: border-color .15s, color .15s; }
   .chip:hover { border-color: var(--muted); }
   .chip.on { border-color: var(--action); color: var(--action); }
   .empty { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
 
-  .toggles { display: flex; flex-wrap: wrap; gap: 7px; margin: 13px 0 4px; }
-  .toggles button {
-    font-family: var(--mono); font-size: 0.72rem; padding: 6px 12px;
-    background: none; color: var(--muted); border: 1px solid var(--line);
-    border-radius: 999px; cursor: pointer;
-  }
-  .toggles button.on { color: var(--action); border-color: var(--action); }
-
   hr.rule { border: 0; border-top: 1px solid var(--line); margin: 16px 0; }
+
+  /* segmented MESH | MIRROR */
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; padding: 3px; gap: 2px; }
+  .seg button { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.12em;
+    border: 0; background: none; color: var(--muted); padding: 6px 14px; border-radius: 6px; cursor: pointer; }
+  .seg button.on { background: oklch(0.26 0.03 265); color: var(--ink); }
+  .seg button:focus-visible { outline: 1px solid var(--action); }
+
+  /* ---- studio workbench -------------------------------------------- */
+  #panel-studio { width: min(430px, calc(100vw - 72px)); }
+  .file-list { display: flex; flex-direction: column; gap: 6px; max-height: 190px; overflow-y: auto; }
+  .file { display: flex; justify-content: space-between; gap: 10px; align-items: baseline;
+    font-family: var(--mono); font-size: 0.74rem; color: var(--ink); background: none;
+    border: 1px solid var(--line); border-radius: 7px; padding: 8px 12px; cursor: pointer; text-align: left; }
+  .file:hover { border-color: var(--muted); }
+  .file.on { border-color: var(--action); }
+  .file .meta { color: var(--muted); white-space: nowrap; }
+  .file .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .pipe { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin: 6px 0 2px; }
+  .stage { font-family: var(--mono); font-size: 0.72rem; padding: 7px 12px; border-radius: 7px;
+    border: 1px solid var(--line); background: none; color: var(--ink); cursor: pointer;
+    transition: border-color .15s, color .15s, background .15s; }
+  .stage.off { color: var(--muted); border-style: dashed; text-decoration: line-through; }
+  .stage.running { border-color: var(--warn); color: var(--warn); }
+  .stage.done { border-color: var(--data); color: var(--data); }
+  .pipe .arrow { color: var(--line); font-family: var(--mono); font-size: 0.72rem; }
+
+  /* ---- live lock flow ----------------------------------------------- */
+  #live-locked { display: none; }
+  body[data-onair="on"] #live-locked { display: block; }
+  body[data-onair="on"] #live-setup { display: none; }
+  #live-locked .airline { display: flex; align-items: center; gap: 10px; font-family: var(--mono);
+    font-size: 0.85rem; font-weight: 600; color: var(--live); margin-bottom: 14px; }
+  #live-locked .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--live);
+    animation: pulse 1.6s ease-out infinite; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--live) 60%, transparent); }
+    100% { box-shadow: 0 0 0 12px transparent; } }
+  .connect { font-family: var(--mono); font-size: 0.74rem; color: var(--muted); line-height: 2; }
+  .connect b { color: var(--ink); font-weight: 600; }
 
   @media (prefers-reduced-motion: reduce) {
     .panel { transition: opacity .01s, translate 0s; }
+    #live-locked .dot { animation: none; }
   }
 </style>
 </head>
 <body>
 
 <canvas id="stage" aria-hidden="true"></canvas>
+
+<div id="mirror-wrap"><div id="mirror-frame">
+  <span id="mirror-tag">MIRROR — <b>your camera, disguised</b> · local only</span>
+  <img id="mirror" alt="live preview of your disguised face">
+</div></div>
 
 <header>
   <h1>alter<b>ego</b></h1>
@@ -191,13 +241,41 @@
   <div>PERSONAS <span id="ro-personas">0</span></div>
 </div>
 
+<!-- first-run setup rail -->
+<aside id="setup" aria-label="setup">
+  <div class="step now" id="setup-1">
+    <span class="step-no">01</span>
+    <div><h3>Scan your face</h3>
+    <p>Optional but worth it: the desk then previews on YOUR geometry.
+    Skip it and you shape the canonical head instead.</p></div>
+  </div>
+  <div class="step" id="setup-2">
+    <span class="step-no">02</span>
+    <div><h3>Shape the alter ego</h3>
+    <p>Drag the eight knobs. Flip to MIRROR to see the disguise on
+    your real camera as you shape it.</p></div>
+  </div>
+  <div class="step" id="setup-3">
+    <span class="step-no">03</span>
+    <div><h3>Name it &amp; save</h3>
+    <p>The identity persists to disk (gitignored). Save at least one
+    persona to unlock the studio.</p></div>
+  </div>
+</aside>
+
 <div id="hint"><p>CANONICAL SPECIMEN — open <b>IDENTITY</b> and scan to make it you</p></div>
 
 <!-- IDENTITY -->
 <section class="panel" id="panel-identity" aria-label="identity designer">
-  <h2>Identity<small>PERSONAS · EIGHT KNOBS · DOUBLE-CLICK A KNOB TO ZERO</small></h2>
+  <h2>Identity<small>SHAPE · PREVIEW · PERSIST</small></h2>
   <div class="panel-body">
-    <div class="chips" id="chips"></div>
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+      <div class="chips" id="chips"></div>
+      <div class="seg" role="tablist" aria-label="preview mode">
+        <button id="seg-mesh" class="on" role="tab">MESH</button>
+        <button id="seg-mirror" role="tab">MIRROR</button>
+      </div>
+    </div>
     <hr class="rule">
     <div id="faders"></div>
     <div class="field"><label for="persona-name">SAVE AS — blank = main identity</label>
@@ -215,38 +293,48 @@
 <section class="panel" id="panel-studio" aria-label="process footage">
   <h2>Studio<small>RAW TAKE → SHIPPED VIDEO</small></h2>
   <div class="panel-body">
-    <div class="field"><label for="studio-video">FOOTAGE</label>
-      <select id="studio-video"></select></div>
+    <div class="field"><label>FOOTAGE — recordings/ and project root</label>
+      <div class="file-list" id="file-list"></div></div>
     <div class="field"><label for="studio-identities">PERSONAS — comma list = multi-person, left→right</label>
       <input type="text" id="studio-identities" placeholder="blank = main identity" spellcheck="false"></div>
     <div class="field"><label for="studio-image">BACKDROP IMAGE/VIDEO — optional</label>
       <input type="text" id="studio-image" placeholder="street.jpg" spellcheck="false"></div>
-    <div class="toggles" id="studio-toggles">
-      <button data-flag="night">night</button>
-      <button data-flag="no_fillers">skip fillers</button>
-      <button data-flag="no_voice">skip voice</button>
-      <button data-flag="no_background">skip background</button>
-    </div>
+    <div class="field"><label>PIPELINE — click a stage to include/exclude it</label>
+      <div class="pipe" id="pipe"></div></div>
   </div>
   <div class="panel-foot">
-    <button class="btn" id="btn-disguise">Disguise only</button>
-    <button class="btn primary" id="btn-ship">Ship it</button>
+    <button class="btn primary" id="btn-ship">Run pipeline</button>
   </div>
 </section>
 
 <!-- LIVE -->
 <section class="panel" id="panel-live" aria-label="go live">
-  <h2>Live<small>THE MIRROR, ON AIR — FAILS CLOSED</small></h2>
+  <h2>Live<small>PREVIEW → LOCK → CONNECT · FAILS CLOSED</small></h2>
   <div class="panel-body">
-    <div class="field"><label for="live-identity">PERSONA</label>
-      <input type="text" id="live-identity" placeholder="blank = main identity" spellcheck="false"></div>
-    <div class="field"><label for="live-image">BACKDROP — optional</label>
-      <input type="text" id="live-image" spellcheck="false"></div>
+    <div id="live-setup">
+      <div class="field"><label for="live-identity">PERSONA</label>
+        <input type="text" id="live-identity" placeholder="blank = main identity" spellcheck="false"></div>
+      <div class="field"><label for="live-image">BACKDROP — optional</label>
+        <input type="text" id="live-image" spellcheck="false"></div>
+      <p class="empty">The mirror on the left is the exact feed your
+      audience would see — fail-closed pixelation included. Lock it in
+      when it looks right.</p>
+    </div>
+    <div id="live-locked">
+      <div class="airline"><span class="dot"></span> ON AIR — IDENTITY LOCKED</div>
+      <p class="connect">
+        In your streaming or call app:<br>
+        camera → <b>OBS Virtual Camera</b><br>
+        microphone → <b>CABLE Output</b> (needs `live --voice` running)<br><br>
+        Your real face never reaches the app. If tracking drops, the
+        feed pixelates rather than expose you.
+      </p>
+    </div>
   </div>
   <div class="panel-foot">
-    <button class="btn" id="btn-rehearse">Rehearse</button>
-    <button class="btn onair" id="btn-air">Go live</button>
-    <button class="btn danger" id="btn-cut">Cut</button>
+    <button class="btn" id="btn-rehearse">Rehearse window</button>
+    <button class="btn onair" id="btn-air">Lock &amp; go live</button>
+    <button class="btn danger" id="btn-cut" disabled>Cut</button>
   </div>
 </section>
 

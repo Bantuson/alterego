@@ -1,12 +1,8 @@
-/* The studio frontend: a precision instrument, not a particle demo.
- *
- * Rendering doctrine (DESIGN.md): the scanned 478 landmarks are drawn
- * with MediaPipe's REAL face-mesh topology (topology.js) — faint
- * tesselation wire + bright feature contours — over a measurement
- * room (graticule + reticle). The knob morphs use the SAME control-
- * point rules as alterego/disguise.py, ported below; points and wire
- * glow green exactly where — and as much as — the disguise will move
- * real pixels. Truthful previews, always.
+/* The studio frontend: one journey — set up an identity, work takes
+ * through the pipeline, go live locked. The MESH view is the scanned
+ * landmark specimen; the MIRROR view is the real camera with the real
+ * disguise (MJPEG from the same fail-closed pipeline that feeds the
+ * virtual camera). Both obey the same knob math as disguise.py.
  */
 import * as THREE from "/three.module.min.js";
 import { TESSELATION, CONTOURS } from "/topology.js";
@@ -29,8 +25,8 @@ const KNOBS = [
   "nose_width", "mouth_width", "lip_fullness", "brow_height",
 ];
 
-/* Mirror of control_shifts(): same landmarks, same axes, same
- * magic numbers. If disguise.py changes, change this too. */
+/* Mirror of control_shifts(): same landmarks, same axes, same magic
+ * numbers. If disguise.py changes, change this too. */
 function controlShifts(pts, knobs) {
   const p = {};
   for (const [name, i] of Object.entries(POINT)) p[name] = pts[i];
@@ -39,7 +35,6 @@ function controlShifts(pts, knobs) {
   const centerX = (p.cheek_left[0] + p.cheek_right[0]) / 2;
   const out = (pt) => (pt[0] > centerX ? 1 : -1);
   const moves = [];
-
   const jaw = knobs.jaw_width * 0.04 * faceWidth;
   for (const n of ["jaw_left", "jaw_right"]) moves.push([p[n], jaw * out(p[n]), 0]);
   for (const n of ["cheek_left", "cheek_right"]) moves.push([p[n], jaw * 0.5 * out(p[n]), 0]);
@@ -58,10 +53,9 @@ function controlShifts(pts, knobs) {
   const brow = knobs.brow_height * 0.025 * faceWidth;
   moves.push([p.brow_left, 0, -brow]);
   moves.push([p.brow_right, 0, -brow]);
-  return { moves, sigma: faceWidth * 0.18, faceWidth };
+  return { moves, sigma: faceWidth * 0.18 };
 }
 
-/* Gaussian splat, per landmark (the pointwise displacement_field). */
 function displaceAll(pts, knobs) {
   const { moves, sigma } = controlShifts(pts, knobs);
   const twoSigmaSq = 2 * sigma * sigma;
@@ -90,11 +84,10 @@ scene.fog = new THREE.Fog(new THREE.Color("#070a15"), 4.2, 9.5);
 const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 60);
 camera.position.z = 5.0;
 
-const room = new THREE.Group();   // graticule + reticle: moves less (parallax depth)
+const room = new THREE.Group();   // graticule wall: parallax backdrop
 const face = new THREE.Group();   // the specimen
 scene.add(room, face);
 
-/* Graticule: a fine dot-grid wall far behind the specimen. */
 function graticule() {
   const c = document.createElement("canvas");
   c.width = c.height = 512;
@@ -114,11 +107,8 @@ function graticule() {
 }
 room.add(graticule());
 
-/* Reticle: measurement rings + tick marks around the specimen.
- * Sized so the outermost ticks stay clear of the hint copy below the
- * face (~0.71 of the viewport half-height), and parented to the SCENE
- * — not the parallax room — so it tracks the specimen's position
- * exactly instead of lagging when the face glides aside. */
+/* Reticle: rings + ticks, scene-level so it tracks the specimen
+ * exactly (a parallax parent would drift it off-center). */
 function reticle() {
   const group = new THREE.Group();
   const mat = (opacity) => new THREE.LineBasicMaterial({
@@ -146,7 +136,7 @@ function reticle() {
 const ret = reticle();
 scene.add(ret);
 
-/* ---------- the specimen: real topology, two-layer glow ---------- */
+/* ---------- the specimen ---------- */
 
 const N = 478;
 const positions = new Float32Array(N * 3);
@@ -172,7 +162,6 @@ geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
 geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
 const sprite = dotTexture();
 
-/* Layer 1: crisp cores. Layer 2: wide soft halos = cheap bloom. */
 const cores = new THREE.Points(geometry, new THREE.PointsMaterial({
   size: 0.030, map: sprite, vertexColors: true, transparent: true,
   opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending,
@@ -183,30 +172,32 @@ const halos = new THREE.Points(geometry, new THREE.PointsMaterial({
 }));
 face.add(halos, cores);
 
-/* The wire that makes it a FACE: faint tesselation, bright contours. */
+/* The wire fades in only once the points have settled — mid-flight
+ * dots with lines attached read as chaos, not assembly. */
+const tessMat = new THREE.LineBasicMaterial({
+  color: 0x46557f, transparent: true, opacity: 0,
+  depthWrite: false, blending: THREE.AdditiveBlending,
+});
+const contourMat = new THREE.LineBasicMaterial({
+  vertexColors: true, transparent: true, opacity: 0,
+  depthWrite: false, blending: THREE.AdditiveBlending,
+});
+const WIRE_OPACITY = { tess: 0.14, contour: 0.85 };
+
 const tessGeo = new THREE.BufferGeometry();
 tessGeo.setAttribute("position", geometry.attributes.position);
 tessGeo.setIndex(new THREE.BufferAttribute(TESSELATION, 1));
-face.add(new THREE.LineSegments(tessGeo, new THREE.LineBasicMaterial({
-  color: 0x46557f, transparent: true, opacity: 0.14,
-  depthWrite: false, blending: THREE.AdditiveBlending,
-})));
+face.add(new THREE.LineSegments(tessGeo, tessMat));
 
 const contourGeo = new THREE.BufferGeometry();
 contourGeo.setAttribute("position", geometry.attributes.position);
 contourGeo.setAttribute("color", geometry.attributes.color);
 contourGeo.setIndex(new THREE.BufferAttribute(CONTOURS, 1));
-face.add(new THREE.LineSegments(contourGeo, new THREE.LineBasicMaterial({
-  vertexColors: true, transparent: true, opacity: 0.85,
-  depthWrite: false, blending: THREE.AdditiveBlending,
-})));
+face.add(new THREE.LineSegments(contourGeo, contourMat));
 
 const BASE = new THREE.Color(0.52, 0.60, 0.86);
 const HOT = new THREE.Color(0.25, 0.95, 0.06);
 
-/* Before any real scan the specimen is MediaPipe's CANONICAL face —
- * the neutral reference head, honestly labeled as such. Scanning
- * replaces it with you. Either way the knobs morph what you see. */
 let scanned = null;
 const specimen = () => scanned ?? CANONICAL;
 for (let i = 0; i < N; i++) {
@@ -238,7 +229,6 @@ function setTargetsFromScan(knobs) {
     targets[i * 3] = shaped[i][0];
     targets[i * 3 + 1] = shaped[i][1];
     targets[i * 3 + 2] = shaped[i][2];
-    /* Truthful change map: green in proportion to real movement. */
     const d = Math.hypot(shaped[i][0] - rest[i][0], shaped[i][1] - rest[i][1]);
     BASE.clone().lerp(HOT, Math.min(d * 22, 1)).toArray(colors, i * 3);
   }
@@ -251,7 +241,7 @@ function setTargetsFromScan(knobs) {
 const STIFF = 60, DAMP = 12;
 const clock = new THREE.Clock();
 let mouseX = 0, mouseY = 0;
-let faceOffsetTarget = 0; // slides the specimen aside for open panels
+let faceOffsetTarget = 0;
 addEventListener("pointermove", (e) => {
   mouseX = (e.clientX / innerWidth - 0.5) * 2;
   mouseY = (e.clientY / innerHeight - 0.5) * 2;
@@ -277,24 +267,33 @@ function animate() {
     }
     geometry.attributes.position.needsUpdate = true;
   }
-  /* Glide toward the offset (works with reduced motion too — the
-   * position must be honest even when the drift is off). */
+  /* Wire opacity follows convergence: sample how far points sit from
+   * their targets; the mesh materializes as the face assembles. */
+  let drift = 0;
+  for (let i = 0; i < 30; i++) {
+    const j = i * 16 * 3;
+    drift += Math.abs(positions[j] - targets[j]);
+  }
+  const settled = reduceMotion ? 1 : Math.max(0, 1 - drift / 3);
+  tessMat.opacity += (WIRE_OPACITY.tess * settled - tessMat.opacity) * 0.08;
+  contourMat.opacity += (WIRE_OPACITY.contour * settled - contourMat.opacity) * 0.08;
+
   const glide = reduceMotion ? 1 : Math.min(dt * 6, 1);
   face.position.x += (faceOffsetTarget - face.position.x) * glide;
   ret.position.x = face.position.x;
   if (!reduceMotion) {
     face.rotation.y = Math.sin(t * 0.1) * 0.22 + mouseX * 0.16;
     face.rotation.x = mouseY * 0.09;
-    room.rotation.y = mouseX * 0.03;   // parallax: the room barely moves
+    room.rotation.y = mouseX * 0.03;
     room.rotation.x = mouseY * 0.015;
-    ret.rotation.z = t * 0.02;         // the instrument is running
+    ret.rotation.z = t * 0.02;
   }
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
 }
 animate();
 
-/* ---------- UI state & API ---------- */
+/* ---------- shared UI state ---------- */
 
 const $ = (s) => document.querySelector(s);
 const consoleEl = $("#console");
@@ -310,20 +309,69 @@ function log(text, cls = "") {
 }
 
 const knobState = Object.fromEntries(KNOBS.map(k => [k, 0]));
+let personas = [];
 
 function updateReadouts() {
-  $("#ro-signal").textContent = scanned ? "LIVE SCAN" : "CANONICAL";
-  $("#ro-signal").classList.toggle("on", !!scanned);
+  const onair = document.body.dataset.onair === "on";
+  const signal = $("#ro-signal");
+  signal.textContent = onair ? "ON AIR" : scanned ? "LIVE SCAN" : "CANONICAL";
+  signal.className = onair ? "air" : scanned ? "on" : "";
   $("#ro-shift").textContent = `${maxShiftPx.toFixed(1)}px`;
+  $("#ro-personas").textContent = String(personas.length);
 }
 
-function refreshConstellation() {
-  setTargetsFromScan(knobState);
+/* ---------- the mirror (MJPEG preview) ---------- */
+
+const mirror = $("#mirror");
+let mirrorOn = false;
+let knobPushTimer = null;
+
+function startMirror(identity, image) {
+  // Screenshot/demo mode never touches the real camera.
+  if (new URLSearchParams(location.search).get("demo") !== null) return;
+  const params = new URLSearchParams();
+  if (identity) params.set("identity", identity);
+  if (image) params.set("image", image);
+  params.set("t", Date.now()); // never let the browser cache a stream
+  mirror.src = `/api/preview/stream?${params}`;
+  document.body.dataset.mirror = "on";
+  mirrorOn = true;
+  pushKnobs(); // the desk state applies immediately
 }
 
-/* The mixing desk: custom bipolar faders (keyboard + pointer). */
+async function stopMirror() {
+  if (!mirrorOn) return;
+  mirrorOn = false;
+  mirror.src = "";
+  delete document.body.dataset.mirror;
+  await fetch("/api/preview/stop", { method: "POST" }).catch(() => {});
+}
+
+function pushKnobs() {
+  if (!mirrorOn) return;
+  clearTimeout(knobPushTimer);
+  knobPushTimer = setTimeout(() => {
+    fetch("/api/preview/knobs", {
+      method: "POST", body: JSON.stringify({ knobs: knobState }),
+    }).catch(() => {});
+  }, 120);
+}
+
+$("#seg-mesh").addEventListener("click", () => {
+  $("#seg-mesh").classList.add("on");
+  $("#seg-mirror").classList.remove("on");
+  stopMirror();
+});
+$("#seg-mirror").addEventListener("click", () => {
+  $("#seg-mirror").classList.add("on");
+  $("#seg-mesh").classList.remove("on");
+  startMirror($("#persona-name").value.trim() || null, null);
+  log("mirror on — this is the pipeline's real output");
+});
+
+/* ---------- the mixing desk ---------- */
+
 const fadersEl = $("#faders");
-const faderEls = {};
 for (const knob of KNOBS) {
   const row = document.createElement("div");
   row.className = "knob";
@@ -341,7 +389,6 @@ for (const knob of KNOBS) {
   const fill = row.querySelector(".meter-fill");
   const thumb = row.querySelector(".meter-thumb");
   const value = row.querySelector(".knob-value");
-  faderEls[knob] = { meter, fill, thumb, value };
 
   const render = () => {
     const v = knobState[knob];
@@ -350,7 +397,6 @@ for (const knob of KNOBS) {
     meter.setAttribute("aria-valuenow", v.toFixed(2));
     const pct = (v + 1) / 2 * 100;
     thumb.style.left = `${pct}%`;
-    /* Bipolar fill: grows from the center notch toward the thumb. */
     fill.style.left = `${Math.min(50, pct)}%`;
     fill.style.width = `${Math.abs(pct - 50)}%`;
     fill.classList.toggle("hot", Math.abs(v) > 0.005);
@@ -358,19 +404,16 @@ for (const knob of KNOBS) {
   const set = (v) => {
     knobState[knob] = Math.max(-1, Math.min(1, v));
     render();
-    refreshConstellation();
+    setTargetsFromScan(knobState);
+    pushKnobs();
+    setupProgress(2);
   };
   const fromPointer = (e) => {
     const rect = meter.getBoundingClientRect();
     set(((e.clientX - rect.left) / rect.width) * 2 - 1);
   };
-  meter.addEventListener("pointerdown", (e) => {
-    meter.setPointerCapture(e.pointerId);
-    fromPointer(e);
-  });
-  meter.addEventListener("pointermove", (e) => {
-    if (e.buttons) fromPointer(e);
-  });
+  meter.addEventListener("pointerdown", (e) => { meter.setPointerCapture(e.pointerId); fromPointer(e); });
+  meter.addEventListener("pointermove", (e) => { if (e.buttons) fromPointer(e); });
   meter.addEventListener("dblclick", () => set(0));
   meter.addEventListener("keydown", (e) => {
     if (e.key === "ArrowRight" || e.key === "ArrowUp") set(knobState[knob] + 0.05);
@@ -381,15 +424,14 @@ for (const knob of KNOBS) {
 }
 
 function setKnobs(values) {
-  for (const knob of KNOBS) {
-    knobState[knob] = values[knob] ?? 0;
-  }
+  for (const knob of KNOBS) knobState[knob] = values[knob] ?? 0;
   document.querySelectorAll(".knob").forEach(r => r._render());
-  refreshConstellation();
+  setTargetsFromScan(knobState);
+  pushKnobs();
 }
 
-/* Panels: one geometry, one open at a time. When a panel is open the
- * specimen glides left so face and controls never overlap. */
+/* ---------- panels & modes ---------- */
+
 let open = null;
 function show(name) {
   open = open === name ? null : name;
@@ -399,18 +441,51 @@ function show(name) {
     b.classList.toggle("on", b.dataset.panel === open));
   document.body.classList.toggle("panel-open", !!open);
   faceOffsetTarget = open ? -0.65 : 0;
+  if (open === "live") {
+    // Live IS the mirror: preview starts the moment you arrive.
+    startMirror($("#live-identity").value.trim() || null,
+                $("#live-image").value.trim() || null);
+  } else if (open !== "identity" || !$("#seg-mirror").classList.contains("on")) {
+    stopMirror();
+  }
 }
 document.querySelectorAll("nav button").forEach(b =>
   b.addEventListener("click", () => show(b.dataset.panel)));
-addEventListener("keydown", (e) => { if (e.key === "Escape") show(open); });
+addEventListener("keydown", (e) => { if (e.key === "Escape" && open) show(open); });
 
-/* Identities */
+/* ---------- setup (first run) ---------- */
+
+let setupStage = 0; // 0 inactive · 1 scan · 2 shape · 3 save
+function setupProgress(stage) {
+  if (!setupStage || stage < setupStage) return;
+  setupStage = stage;
+  for (const n of [1, 2, 3]) {
+    const el = $(`#setup-${n}`);
+    el.classList.toggle("now", n === stage);
+    el.classList.toggle("done", n < stage);
+  }
+}
+function enterSetup() {
+  document.body.dataset.setup = "on";
+  setupStage = 1;
+  setupProgress(1);
+  show("identity");
+  log("welcome — save your first identity to unlock the studio");
+}
+function completeSetup() {
+  if (!setupStage) return;
+  setupStage = 0;
+  delete document.body.dataset.setup;
+  log("studio unlocked — STUDIO processes takes, LIVE goes on air", "ok");
+}
+
+/* ---------- identities ---------- */
+
 async function loadIdentities() {
-  const list = await (await fetch("/api/identities")).json();
-  $("#ro-personas").textContent = String(list.length);
+  personas = await (await fetch("/api/identities")).json();
   const chips = $("#chips");
   chips.innerHTML = "";
-  for (const it of list) {
+  for (const it of personas) {
     const chip = document.createElement("button");
     chip.className = "chip";
     chip.textContent = it.name ?? "main identity";
@@ -423,8 +498,8 @@ async function loadIdentities() {
     });
     chips.appendChild(chip);
   }
-  if (!list.length) chips.innerHTML =
-    `<p class="empty">none yet — shape the knobs and save</p>`;
+  if (!personas.length) chips.innerHTML = `<p class="empty">no personas yet</p>`;
+  updateReadouts();
 }
 
 $("#btn-zero").addEventListener("click", () => setKnobs({}));
@@ -435,20 +510,22 @@ $("#btn-save").addEventListener("click", async () => {
   })).json();
   if (res.error) return log(res.error, "err");
   log(`saved -> ${res.saved}`, "ok");
-  loadIdentities();
+  await loadIdentities();
+  completeSetup();
 });
 
-/* Scan */
 async function scan(fromCache) {
   if (fromCache) {
     const cached = await (await fetch("/api/scan/cached")).json();
     if (!cached.points) return false;
     scanned = cached.points;
   } else {
+    await stopMirror(); // the scan needs the camera
     log("scanning — look at the camera, neutral face…");
     const res = await (await fetch("/api/scan", { method: "POST" })).json();
     if (res.error) { log(res.error, "err"); return false; }
     scanned = res.points;
+    setupProgress(2);
   }
   $("#hint").classList.add("gone");
   setTargetsFromScan(knobState);
@@ -457,51 +534,129 @@ async function scan(fromCache) {
 }
 $("#btn-scan").addEventListener("click", () => scan(false));
 
-/* Studio jobs */
+/* Save-as field reaching step 3 */
+$("#persona-name").addEventListener("input", () => setupProgress(3));
+
+/* ---------- studio workbench ---------- */
+
+const STAGES = [
+  { key: "disguise", flag: null },
+  { key: "background", flag: "no_background" },
+  { key: "enhance", flag: null },
+  { key: "cut", flag: "no_fillers" },   // toggling cut here = skip fillers
+  { key: "voice", flag: "no_voice" },
+];
+const stageState = Object.fromEntries(STAGES.map(s => [s.key, true]));
+let selectedFile = null;
+
+const pipeEl = $("#pipe");
+STAGES.forEach((stage, i) => {
+  if (i) {
+    const arrow = document.createElement("span");
+    arrow.className = "arrow";
+    arrow.textContent = "→";
+    pipeEl.appendChild(arrow);
+  }
+  const b = document.createElement("button");
+  b.className = "stage";
+  b.textContent = stage.key;
+  b.dataset.stage = stage.key;
+  b.addEventListener("click", () => {
+    if (!stage.flag && stage.key !== "cut") return; // disguise/enhance always run in ship
+    stageState[stage.key] = !stageState[stage.key];
+    b.classList.toggle("off", !stageState[stage.key]);
+  });
+  pipeEl.appendChild(b);
+});
+
 async function loadFiles() {
   const files = await (await fetch("/api/files")).json();
-  $("#studio-video").innerHTML =
-    files.map(f => `<option>${f}</option>`).join("") ||
-    "<option value=''>— no recordings found —</option>";
+  const list = $("#file-list");
+  list.innerHTML = "";
+  for (const f of files) {
+    const b = document.createElement("button");
+    b.className = "file";
+    const age = Math.max(0, (Date.now() / 1000 - f.mtime) / 3600);
+    const when = age < 1 ? "just now" : age < 24 ? `${age.toFixed(0)}h ago`
+      : `${(age / 24).toFixed(0)}d ago`;
+    b.innerHTML = `<span class="name">${f.path}</span>
+                   <span class="meta">${f.mb} MB · ${when}</span>`;
+    b.addEventListener("click", () => {
+      document.querySelectorAll(".file").forEach(x => x.classList.remove("on"));
+      b.classList.add("on");
+      selectedFile = f.path;
+    });
+    list.appendChild(b);
+  }
+  if (!files.length) list.innerHTML =
+    `<p class="empty">no footage found — record with the CLI or drop
+     files into recordings/</p>`;
 }
-const flags = {};
-document.querySelectorAll("#studio-toggles button").forEach(b =>
-  b.addEventListener("click", () => {
-    flags[b.dataset.flag] = !flags[b.dataset.flag];
-    b.classList.toggle("on", flags[b.dataset.flag]);
-  }));
+
+function markStages(line) {
+  /* The pipeline prints "[2/5] background" — light the chips up. */
+  const match = line.match(/^\[(\d+)\/\d+\] (\w+)/);
+  if (match) {
+    document.querySelectorAll(".stage").forEach(el => {
+      if (el.dataset.stage === match[2]) el.classList.add("running");
+      else if (el.classList.contains("running")) {
+        el.classList.remove("running");
+        el.classList.add("done");
+      }
+    });
+  }
+  if (line.includes("shipped:")) {
+    document.querySelectorAll(".stage.running").forEach(el => {
+      el.classList.remove("running");
+      el.classList.add("done");
+    });
+  }
+}
 
 async function runJob(payload) {
   const res = await (await fetch("/api/jobs", {
     method: "POST", body: JSON.stringify(payload),
   })).json();
   if (res.error) return log(res.error, "err");
+  document.querySelectorAll(".stage").forEach(el =>
+    el.classList.remove("running", "done"));
   const events = new EventSource(`/api/jobs/${res.id}/events`);
   events.onmessage = (e) => {
     const line = JSON.parse(e.data);
+    markStages(line);
     const cls = line.includes("REAL") ? "warn"
       : line.startsWith("✓") ? "ok" : line.startsWith("✗") ? "err" : "";
     log(line, cls);
+    if (line.startsWith("✓")) loadFiles(); // new output appears in the list
   };
   events.addEventListener("end", () => events.close());
 }
 
-$("#btn-ship").addEventListener("click", () => runJob({
-  verb: "ship", video: $("#studio-video").value,
-  identity: $("#studio-identities").value.split(",")[0].trim() || null,
-  image: $("#studio-image").value.trim() || null, ...flags,
-}));
-$("#btn-disguise").addEventListener("click", () => runJob({
-  verb: "disguise", video: $("#studio-video").value,
-  identities: $("#studio-identities").value.split(",").map(s => s.trim()).filter(Boolean),
-}));
+$("#btn-ship").addEventListener("click", () => {
+  if (!selectedFile) return log("pick footage first", "warn");
+  runJob({
+    verb: "ship", video: selectedFile,
+    identity: $("#studio-identities").value.split(",")[0].trim() || null,
+    image: $("#studio-image").value.trim() || null,
+    no_background: !stageState.background,
+    no_fillers: !stageState.cut,
+    no_voice: !stageState.voice,
+  });
+});
 
-/* Live */
+/* ---------- live: preview → lock → connect ---------- */
+
 async function liveStatus() {
   const s = await (await fetch("/api/live/status")).json();
+  document.body.dataset.onair = s.running ? "on" : "off";
+  if (!s.running) delete document.body.dataset.onair;
   $("#btn-cut").disabled = !s.running;
+  $("#btn-air").disabled = s.running;
+  updateReadouts();
 }
+
 async function startLive(virtual) {
+  await stopMirror(); // hand the camera to the live process
   const res = await (await fetch("/api/live/start", {
     method: "POST",
     body: JSON.stringify({
@@ -510,7 +665,7 @@ async function startLive(virtual) {
     }),
   })).json();
   if (res.error) return log(res.error, "err");
-  log(virtual ? "on air — virtual camera live" : "rehearsal window open", "ok");
+  log(virtual ? "identity locked — on air" : "rehearsal window open", "ok");
   liveStatus();
 }
 $("#btn-rehearse").addEventListener("click", () => startLive(false));
@@ -518,29 +673,29 @@ $("#btn-air").addEventListener("click", () => startLive(true));
 $("#btn-cut").addEventListener("click", async () => {
   await fetch("/api/live/stop", { method: "POST" });
   log("feed cut", "warn");
-  liveStatus();
+  await liveStatus();
+  if (open === "live") startMirror($("#live-identity").value.trim() || null,
+                                   $("#live-image").value.trim() || null);
 });
 
-/* Boot. `?demo` = screenshot mode: springs land instantly and the
- * identity panel opens — used for docs and headless visual checks.
- * The pending image below holds the document's load event ~2.5s so
- * headless screenshots capture the settled scene, not frame one. */
-if (location.search.includes("demo")) {
+/* ---------- boot ---------- */
+
+setTargetsFromScan(knobState); // canonical specimen exists at frame one
+const demoMode = new URLSearchParams(location.search).get("demo");
+if (demoMode !== null || location.search.includes("hold")) {
   const hold = new Image();
-  hold.src = "/slow";
+  // hold mode waits longer: it also covers the server's first-import lag
+  hold.src = demoMode !== null ? "/slow" : "/slow?ms=7000";
 }
-/* The canonical specimen needs no server round-trip: target it NOW so
- * the face exists from the first frame (the API imports OpenCV on its
- * first call, which can take seconds on a small machine). */
-setTargetsFromScan(knobState);
-if (location.search.includes("demo")) {
-  show("identity");
+if (demoMode !== null) {
+  show(["studio", "live"].includes(demoMode) ? demoMode : "identity");
   setKnobs({ jaw_width: 0.8, eye_spacing: -0.6, lip_fullness: 0.5 });
   for (let i = 0; i < N * 3; i++) { positions[i] = targets[i]; velocities[i] = 0; }
 }
 
 (async () => {
   await Promise.all([loadIdentities(), loadFiles(), liveStatus()]);
-  await scan(true); // replace canonical with the cached real scan, if any
+  await scan(true);
   updateReadouts();
+  if (!personas.length && !location.search.includes("demo")) enterSetup();
 })();
